@@ -1,0 +1,859 @@
+Аутентификация - Проверка подлинности пользователя или процесса login-password
+Авторизация - Процесс наделения правами и определение, что пользователь может делать после успешной аутентификации.
+
+Архитектура
+
+  Запрос
+    |
+  фильтр аутентификации (authentication filter)                 контекст безопасности (security context) сохраняет данные
+  делегирует запрос менеджеру аутентификации                --- аутентификации после процесса аутентификации. Контекст безопасности 
+  и на основе ответа настраивает контекст безопасности          будет хранить данные до тех пор, пока действие не завершится
+    |   |
+  менеджер аутентификации (authentication manager) 
+  использует провайдера аутентификации для обработки аутентификации
+    |   |
+  провайдер аутентификации (authentication provider)            ---   кодировщик паролей (password encoder) реализует управление паролями, 
+  реализует логику аутентификации                                     которое провайдер аутентификации использует в логике аутентификации
+  находит пользователя с помощью сервиса сведений о                   После нахождения данных пользователя AuthenticationProvider
+  пользователе и проверяет пароль с помощью кодировщика паролей       проверяет пароль с помощью PasswordEncoder
+    | 
+  служба сведений о пользователе (user details service) 
+  реализует ответственность за управление пользователями, 
+  которую провайдер аутентификации использует в логике аутентификации
+  
+При использовании Spring Boot производится автонастройка по умолчанию
+  
+  защищаются все Endpoint
+  
+  HTTP Basic - аутентифицирует пользователя с помощью набора учетных данных (имя пользователя и пароль), 
+              которые приложение получает в заголовке HTTP-запроса
+  
+  интерфейс UserDetailsService - хранение в памяти, создает пользователя user и паролем UUID выводимый в консоль
+  интерфейс PasswordEncoder - отвечает за кодирование и сравнение
+  
+  данные интерфейсы обязательны и связаны, при реализации UserDetailsService необходимо реализовать PasswordEncoder
+  
+  
+Конфигурация
+
+  @Bean
+  UserDetailsService userDetailsService() {
+      UserDetails user = User.withUsername("user").password("user").authorities("read").build();
+      return new InMemoryUserDetailsManager(user);
+  }
+
+  @Bean
+  public PasswordEncoder passwordEncoder() {
+      return NoOpPasswordEncoder.getInstance();
+  }
+
+  Чтобы настроить обработку аутентификации и авторизации, нужно определить bean-компонент типа SecurityFilterChain
+  настройка производится через методы HttpSecurity
+  
+  @Bean
+  SecurityFilterChain configure(HttpSecurity http) {
+      return http
+              .httpBasic(Customizer.withDefaults())
+              .authorizeHttpRequests(c -> c.anyRequest().authenticated())
+              .build();
+  }
+
+  Customizer – это контракт, который вы реализуете для определения настройки любого элемента Spring Security
+
+  UserDetailsService можно также настроить через SecurityFilterChain (но тогда создается дефолтный юзер почему то...)
+  
+  @Bean
+  SecurityFilterChain configure(HttpSecurity http) {
+      UserDetails user = User.withUsername("user").password("user").authorities("read").build();
+      UserDetailsService userDetailsService = new InMemoryUserDetailsManager(user);
+      return http
+              .httpBasic(Customizer.withDefaults())
+              .authorizeHttpRequests(c -> c.anyRequest().authenticated())
+              .userDetailsService(userDetailsService)
+              .build();
+  }
+
+  AuthenticationProvider можно переписать так что UserDetailsService и PasswordEncoder вообще использоваться не будут....
+
+  @Component
+  public class CustomAuthenticationProvider implements AuthenticationProvider {
+      @Override
+      //представляет всю логику аутентификации
+      public @Nullable Authentication authenticate(Authentication authentication) throws AuthenticationException {
+          String username = authentication.getName();
+          String password = String.valueOf(authentication.getCredentials());
+          if ("user".equals(username) && "user".equals(password)) {
+              return new UsernamePasswordAuthenticationToken( username, password, Arrays.asList());
+          } else {
+              throw new AuthenticationCredentialsNotFoundException("Error!");
+          }
+      }
+
+      @Override
+      public boolean supports(Class<?> authentication) {
+          return UsernamePasswordAuthenticationToken.class.isAssignableFrom(authentication);
+      }
+  }
+  
+  SecurityFilterChain configure(HttpSecurity http) {
+    http.authenticationProvider(customAuthenticationProvider)
+
+
+Управление пользователями
+  
+  UserDetailsService - извлечение пользователя по его имени
+  UserDetailsManager - расширяет UserDetailsService. Добавляет создание, изменение, удаление пользователя и т.д.
+  UserDetails – описывает пользователя
+  GrantedAuthority – привы
+  
+  UserDetails
+
+    аутентификация 
+      String getUsername();
+      String getPassword();
+
+    авторизация
+      Collection<? extends GrantedAuthority> getAuthorities();
+      boolean isAccountNonExpired()
+      boolean isAccountNonLocked()
+      boolean isCredentialsNonExpired()
+      boolean isEnabled()
+  
+    вариант для загрузки юзеров из БД в момент запуска приложения, просто побаловаться
+    
+    @Bean
+    UserDetailsService userDetailsService() {
+        List<UserDetails> users = userRepository.findAllActiveUsers()
+                .stream()
+                .map(user -> User.builder().username(user.getUsername()).password(user.getPassword()).build())
+                .toList();
+        return new InMemoryUserDetailsManager(users);
+    }
+  
+  UserDetailsService
+    UserDetails loadUserByUsername(String username)
+    
+    реализация через БД, в данном случае мы не создаем в конфиге бина UserDetailsService
+    
+    @Component
+    @RequiredArgsConstructor
+    public class CustomUserDetailsService implements UserDetailsService {
+
+        private final UserRepository userRepository;
+
+        @Override
+        public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+            User user = userRepository.findUserByEmail(username);
+            ArrayList<String> roles = userRepository.findRolesByUser(user);
+            if (user != null)
+                return org.springframework.security.core.userdetails.User.builder()
+                        .username(user.getEmail())
+                        .password(user.getPassword())
+                        .roles(roles.toArray(new String[0])) // добавит с префиксом ROLE_
+                        ИЛИ потому что переприсваивает, а не добавляет...
+                        .authorities(AuthorityUtils.createAuthorityList(roles)) // без префикса
+                        .build();
+            else
+                throw new UsernameNotFoundException("User not found");
+
+        }
+    }
+  
+UserDetailsManager
+
+  есть например встроенный JdbcUserDetailsManager максимально топорный
+    table users (
+      username
+      password
+      enabled
+    );
+
+    table authorities (
+      username 
+      authority
+    );
+    
+    @Bean
+    public UserDetailsService userDetailsService(DataSource dataSource) {
+      return new JdbcUserDetailsManager(dataSource);
+    }
+
+Управление паролями
+
+  PasswordEncoder
+    // используется для шифрования или хеширования заданного пароля
+    String encode(CharSequence rawPassword);
+    // для проверки, соответствует ли предоставленный пароль одному из элементов набора известных учетных данных
+    boolean matches(
+        CharSequence rawPassword, // пароль который мы получили с веба
+        String encodedPassword // пароль полученный из UserDetailsService
+        );
+    // включает повторное кодирование закодированного пароля
+    default boolean upgradeEncoding(@String encodedPassword)
+
+  @Component
+  public class CustomPasswordEncoder implements PasswordEncoder {
+
+      @Override
+      public @Nullable String encode(@Nullable CharSequence rawPassword) {
+          return hashWithSHA512(rawPassword.toString());
+      }
+
+      @Override
+      public boolean matches(@Nullable CharSequence rawPassword, @Nullable String encodedPassword) {
+          String hashedPassword = encode(rawPassword);
+          return encodedPassword.equals(hashedPassword);
+      }
+
+  Готовые реализации
+    NoOpPasswordEncoder – не кодирует пароль
+    StandardPasswordEncoder – использует SHA-256 для хеширования пароля. 
+    Pbkdf2PasswordEncoder – использует функцию деривации ключа на основе пароля 2 (PBKDF2)
+    BCryptPasswordEncoder – использует функцию хеширования bcrypt для кодирования пароля
+    SCryptPasswordEncoder – использует функцию хеширования scrypt для кодирования пароля
+  
+Цепочки HTTP фильтров
+  
+  Фильтр получает запрос, выполняет его логику и в конечном итоге делегирует запрос следующему фильтру в цепочке
+  Пример - authentication filter - перехватывает HTTP запрос и делает всякое...
+
+  interface jakarta.servlet.Filter
+    void doFilter(
+      ServletRequest request, // представляет HTTP-запрос
+      ServletResponse response, // представляет HTTP-ответ
+      FilterChain chain // представляет цепочку фильтров
+      )
+  Цепочка фильтров представляет собой набор фильтров, действующих в определенном порядке
+  
+  примеры готовых фильтры
+     BasicAuthenticationFilter обслуживает аутентификацию HTTP Basic, если она присутствует
+     CsrfFilter заботится о защите от подделки межсайтовых запросов (CSRF), которую мы обсудим в главе 9;
+     CorsFilter отвечает за правила авторизации совместного использования ресурсов между источниками (CORS)
+  
+  .httpBasic - добавляет фильтр BasicAuthenticationFilter
+  
+  public class CustomFilter implements Filter {
+      @Override
+      public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
+          var httpRequest = (HttpServletRequest) request;
+          var httpResponse = (HttpServletResponse) response;
+          String requestId = httpRequest.getHeader("Request-Id");
+          if (requestId == null || requestId.isBlank()) {
+              httpResponse.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+              return;
+          }
+          chain.doFilter(request, response);
+      }
+  }
+  
+  добавляем фильтр в цепочку 
+  http
+      .addFilterBefore(new CustomFilter(), BasicAuthenticationFilter.class)
+      .addFilterAfter...
+  
+  Добавление фильтра на место существующего
+    типичное применение - замена аутентификации
+    примеры
+      идентификация на основе статического значения заголовка для аутентификации;
+      использование симметричного ключа для подписи запроса на аутентификацию;
+      использование одноразового пароля (one-time password, OTP) в процессе аутентификации.
+  
+  
+  OncePerRequestFilter - гарантирует, что метод doFilter() фильтра выполняется только один раз за запрос
+  
+  !!!! ВАЖНО
+  при регистрации фильтра как Component он автоматически добавляется в цепочку Servlet container's filter chain
+  и если его добавить в Spring Security filter chain то он выполнится дважды
+  но без Component не будет работать инъекция @Value
+  
+  @Component
+  public class CustomFilter extends OncePerRequestFilter {
+      
+      @Value("${authorization.key}")
+      private String authorizationKey;
+
+      @Override
+      protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
+
+          String authentication = request.getHeader("Authorization");
+          if (authorizationKey.equals(authentication))
+              filterChain.doFilter(request, response);
+          else
+              response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+
+      }
+  }
+  
+  // при этом httpBasic мы УБИРАЕМ если это замена метода аутентификации
+  http.addFilterAt(customFilter, BasicAuthenticationFilter.class)
+  
+
+Principal
+  контракт представляющий пользователя запрашивающего доступ к приложению
+  
+  getName()
+  
+Authentication 
+  расширяет Principal
+  представляет событие запроса аутентификации и содержит сведения о субъекте, который запрашивает доступ к приложению
+  
+  Collection<? extends GrantedAuthority> getAuthorities(); - полномочия пользователя
+  Object getCredentials(); - конфиденциальный элемент: это может быть пароль, код, отпечаток пальца и т. д
+  Object getDetails(); - дополнительная информация о запросе
+  Object getPrincipal();
+  // Объект аутентификации либо аутентифицирован, либо все еще находится в процессе аутентификации
+  boolean isAuthenticated();
+  void setAuthenticated(boolean isAuthenticated) throws IllegalArgumentException;
+  
+  
+AuthenticationProvider
+  под дефолту использует UserDetailsService и PasswordEncoder
+
+  public @Nullable Authentication authenticate(Authentication authentication) throws AuthenticationException
+  
+    метод должен выдавать исключение AuthenticationException, если аутентификация не удалась
+    если метод получает объект аутентификации, не поддерживаемый вашей реализацией AuthenticationProvider, то он должен возвращать null
+    метод должен возвращать экземпляр Authentication, представляющий полностью аутентифицированный объект
+
+  public boolean supports(Class<?> authentication)
+    проверка поддержки типа объекта Authentication
+
+  
+  Может быть множество реализаций AuthenticationProvider поддерживающих разные типы Authentication
+  Например один по логину паролю, другой по СМС коду, третий по ключу
+  Причем можно сделать 2 разных по коду, для таких supports будет возвращать true, а authenticate будет возвращать null для неподдерживаемого
+  
+  @Component
+  @RequiredArgsConstructor
+  public class CusmonAuthenticationProvider implements AuthenticationProvider {
+
+      private final UserDetailsService userDetailsService;
+      private final PasswordEncoder passwordEncoder;
+
+      @Override
+      public @Nullable Authentication authenticate(Authentication authentication) throws AuthenticationException {
+
+          String username = authentication.getName();
+          String password = authentication.getCredentials().toString();
+
+          UserDetails user = userDetailsService.loadUserByUsername(username);
+
+          if (passwordEncoder.matches(password, user.getPassword())) {
+              return new UsernamePasswordAuthenticationToken(user, password, user.getAuthorities());
+          } else {
+              throw new BadCredentialsException("Bad credentials");
+          }
+      }
+
+      @Override
+      public boolean supports(Class<?> authentication) {
+          return authentication.equals(UsernamePasswordAuthenticationToken.class);
+      }
+  }
+  
+  при определении одного провайдера, он подхватиться автоматически, если более одного, то нужно явно прописывать их через 
+    http.authenticationProvider(authenticationProvider);
+  
+  
+interface SecurityContext
+
+  методы
+  
+    @Nullable Authentication getAuthentication();
+    void setAuthentication(@Nullable Authentication authentication);
+    
+  стратегии хранения, SecurityContextHolder
+    MODE_THREADLOCAL  – позволяет каждому потоку хранить свои собственные сведения в контексте безопасности
+    MODE_INHERITABLETHREADLOCAL  – работает аналогично предыдущей стратегии, но также указывает Spring Security копировать
+                                    контекст безопасности в следующий поток в случае асинхронного метода
+    MODE_GLOBAL – заставляет все потоки приложения видеть один и тот же экземпляр контекста безопасности
+    
+     @Bean
+       public InitializingBean initializingBean() {
+       return () -> SecurityContextHolder.setStrategyName(
+       SecurityContextHolder.MODE_INHERITABLETHREADLOCAL);
+     }
+    
+  Доступ к данным
+  
+    SecurityContext securityContext = SecurityContextHolder.getContext();
+    Authentication authentication = securityContext.getAuthentication();
+    
+    также можно через инъекцию параметров
+    function_name (Authentication a)
+    
+  При создании потоков вручную, на них не будет работать распространение контекста
+    см. DelegatingSecurityContextExecutorService
+    
+Авторизация
+  после завершения потока аутентификации приложение сразу делегирует запрос фильтру авторизации
+  
+  через SecurityFilterChain
+  
+    hasRole(String role)
+    hasAnyRole(String... roles)
+    hasAuthority(String authority)
+    hasAnyAuthority(String... authorities)
+    access(AuthorizationManager<? super RequestAuthorizationContext> manager) // через реализацию интерфейса AuthorizationManager
+    
+    http.authorizeHttpRequests(c -> c.anyRequest().hasAuthority("USER"))
+    
+  Авторизация на уровне конкретных точек
+    
+    При использовании сопоставлений для отбора запросов порядок правил должен идти от частного к общему. 
+    метод anyRequest() не может быть вызван перед более конкретным методом requestMatchers().
+    
+    requestMatchers(HttpMethod method, String... patterns)
+    requestMatchers(String... patterns)
+    
+    http.authorizeHttpRequests(
+      c -> c.requestMatchers("/hello").hasAuthority("ADMIN") // точка hello только юзерам с привой ADMIN
+            .requestMatchers("/ciao").hasAuthority("MANAGER") // точка ciao только юзерам с привой MANAGER
+            .anyRequest().permitAll() // все остальные без ограничений
+    );
+    
+    ВАЖНО
+      фильтр аутентификации выполняется перед фильтром авторизации
+      если есть открытые конечные точки и к ней происходит обращение, но при этом указывается несуществующие логин\пароль 
+      то запрос будет отфильтрован фильтром аутентификации
+    
+    http.authorizeHttpRequests(
+      c -> c.requestMatchers(HttpMethod.GET, "/a").authenticated()
+            .requestMatchers(HttpMethod.POST, "/a").permitAll()
+            .anyRequest().denyAll()
+    );
+    
+    Spring Path Expressions
+    
+      ? — соответствует одному символу.
+      * — соответствует нулю или более символов внутри сегмента пути.
+      ** — соответствует нулю или более сегментов пути (рекурсивный поиск).
+      {param} Захватывает сегмент пути как переменную.
+      {str:[a-z]+}: Захватывает переменную, соответствующую регулярному выражению
+      {id:[0-9]+}
+      
+Настройка защиты от CSRF
+  
+  по умолчанию включена
+  для отключения
+  http.csrf(c -> c.disable())
+  
+  фильтр CsrfFilter
+    перехватывает запросы и пропускает только те из них, которые используют методы HTTP
+    GET, HEAD, TRACE и OPTIONS. Для всех остальных запросов фильтр ожидает получить заголовок, содержащий токен. 
+    Если этот заголовок не существует или содержит неверное значение токена, 
+    приложение отклоняет запрос и возвращает статус ответа HTTP 403 Forbidden.
+
+  CsrfFilter использует компонент с именем CsrfTokenRepository для управления значениями токенов CSRF
+  
+  подглядеть токен можно через 
+    .addFilterAfter(showCSRFFilter, CsrfFilter.class)
+    
+    @Slf4j
+    @Component
+    public class ShowCSRFFilter extends OncePerRequestFilter {
+
+        @Override
+        protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
+            CsrfToken csrfToken = (CsrfToken) request.getAttribute("_csrf");
+            log.info(csrfToken.getHeaderName());
+            log.info(csrfToken.getParameterName());
+            log.info(csrfToken.getToken());
+            filterChain.doFilter(request, response);
+        }
+    }
+    
+  Для управления токенами через БД идем реализовывать пачку интерфейсов...
+    
+CORS
+  
+  В браузерах встроен механизм безопасности при открытии страницы, 
+  если на ней происходит запрос к другому домену например через iframe, то он будет заблокирован
+  
+  Механизм CORS помогает ослабить эти ограничения
+  работает на основе заголовков HTTP
+  Браузер отправляет запрос с заголовком Origin. Сервер в ответ посылает Access-Control-Allow-Origin, разрешающий доступ, если источник в белом списке
+  
+  Access-Control-Allow-Origin: (например, * или https://example.com) кто может читать данные.
+  Access-Control-Allow-Methods: разрешенные методы (GET, POST).
+  Access-Control-Allow-Headers: разрешенные заголовки. 
+  
+  Применение
+  
+    через аннотацию в контроллере
+      @CrossOrigin({"example.com", "example.org"}) - метод, делает конечную точку разрешенной, в str указываются хосты (также можно *), с которых можно ее вызвать
+                                                    также в ней можно задать allowedHeaders и methods
+
+    через конфиг
+      
+      http.cors(c -> {
+          CorsConfigurationSource source = request -> {
+              CorsConfiguration config = new CorsConfiguration();
+              config.setAllowedOrigins(List.of("example.com", "example.org"));
+              config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE"));
+              config.setAllowedHeaders(List.of("*"));
+              return config;
+          };
+          c.configurationSource(source);
+      });
+  
+  
+method security
+  
+  авторизация вызова 
+    реализуется через АОП
+    
+    @EnableMethodSecurity - класс конфигурации, включает авторизацию вызова
+    
+    @PreAuthorize(str) - метод, проверка выполняется до выполнения метода, 
+                        str - выражение Spring Expression Language (SpEL), описывающее правило авторизации 
+        
+        @PreAuthorize("hasAuthority('ADMIN')") 
+        
+        также можно получить из SpEL доступ к входным параметрам и всякое другое
+        
+        @PreAuthorize("#name == authentication.principal.username")
+        public List<String> getSecretNames(String name) {...}
+        
+    @PostAuthorize(str) - метод, проверка выполняется ПОСЛЕ выполнения метода, 
+                          str - выражение Spring Expression Language (SpEL)
+      
+        @PostAuthorize("returnObject.contains('reader')") // returnObject - доступ к результату
+        public List<Employee> getEmployee(String name) {...}
+        
+        
+    Реализация в отдельном классе для более сложной логики
+      
+      hasPermission в SpEL (Spring Expression Language) — это специальная функция Spring Security для детальной авторизации, 
+          используемая с ACL (Access Control List) для проверки прав на конкретные объекты данных. 
+          Она делегирует проверку компоненту PermissionEvaluator, позволяя разрешить или запретить доступ (READ, WRITE и т.д.) к методу или объекту.
+      
+      
+      @PostAuthorize("hasPermission(returnObject, 'ADMIN')")
+      @GetMapping("/user/{id}")
+      public User findById(@PathVariable("id") Long id) {...}
+      
+      реализуем контракт PermissionEvaluator
+            Authentication authentication - биндится автоматически
+        
+        //Проверяет право доступа (permission) к уже существующему объекту (targetDomainObject)
+        boolean hasPermission(Authentication authentication, Object targetDomainObject, Object permission);
+        //Проверяет право доступа по ID и типу объекта, не загружая сам объект, например
+        boolean hasPermission(Authentication authentication, Serializable targetId, String targetType, Object permission);
+      
+        @Component
+        public class CustomPermissionEvaluator implements PermissionEvaluator {
+
+            @Override
+            public boolean hasPermission(Authentication authentication, Object targetDomainObject, Object permission) {
+                User user = (User) targetDomainObject;
+                String p = (String) permission;
+                return authentication.getAuthorities().stream()
+                        .anyMatch(a -> a.getAuthority().equals(p))
+            }
+
+            @Override
+            public boolean hasPermission(Authentication authentication, Serializable targetId, String targetType, Object permission) {
+                return false;
+            }
+        }
+        
+      далее нужно определить бин MethodSecurityExpressionHandler в конфиге
+      
+        private final CustomPermissionEvaluator evaluator;
+        
+        @Bean
+        protected MethodSecurityExpressionHandler createExpressionHandler() {
+            var expressionHandler = new DefaultMethodSecurityExpressionHandler();
+            expressionHandler.setPermissionEvaluator(evaluator);
+            return expressionHandler;
+        }
+        
+      Если делать ДО вызова, то мы еще не имеем экземпляра возвращаемого объекта
+        и делаем это через второй метод PermissionEvaluator, в который передаем входной параметр и класс получаемого объекта
+        
+        @PreAuthorize("hasPermission(#id, 'user', 'ADMIN')")
+        @GetMapping("/user/{id}")
+        public User findById(@PathVariable("id") Long id) {...}
+      
+      Реализация нескольких PermissionEvaluator делается через центральный класс
+      
+        @Component
+        public class CustomPermissionEvaluator implements PermissionEvaluator {
+        
+            private final UserService userService;
+            private final DocumentService documentService;
+
+            @Override
+            public boolean hasPermission(Authentication authentication, Object targetDomainObject, Object permission) {
+                if (targetDomainObject instanceof User) {
+                    return userService.hasPermission(authentication, (User) targetDomainObject, permission);
+                } else if (targetDomainObject instanceof Document) {
+                    return documentService.hasPermission(authentication, (Document) targetDomainObject, permission);
+                }
+                return false;
+            }
+
+            @Override
+            public boolean hasPermission(Authentication authentication, Serializable targetId, String targetType, Object permission) {
+                if ("User".equalsIgnoreCase(targetType)) {
+                    return userService.hasPermissionById(authentication, targetId, permission);
+                }
+                ...
+                return false;
+            }
+        }
+        
+    Прочие аннотации
+    
+      @RolesAllowed("ADMIN")
+      @Secured("ROLE_ADMIN")
+      
+      включение
+        @EnableMethodSecurity(
+          jsr250Enabled = true,
+          securedEnabled = true
+        )
+        
+  фильтрация на уровне метода
+    
+    ВАЖНО применяется только к коллекциям и массивам
+    
+    предварительная фильтрация (prefiltering) – фреймворк фильтрует значения параметров перед вызовом метода;
+
+      @PreFilter(value = "filterObject == authentication.name", filterTarget = "arr") // filterObject ссылка на входной параметр arr
+      @GetMapping("/prefilter")
+      public List<String> prefilter(@RequestBody List<String> arr) {...}
+
+    постфильтрация (postfiltering) – фреймворк фильтрует возвращаемое значение после вызова метода.
+    
+      @PostFilter(value = "filterObject == authentication.name") // filterObject ссылка на вЫходной массив
+      @GetMapping("/postfilter")
+      public List<String> postfilter() {...}
+
+      
+OAuth 2 и OpenID Connect 
+
+  OAuth 2 - спецификация, которая описывает разделение обязанностей по аутентификации в системе
+    
+    Архитектура
+      пользователь – субъект, который использует приложение
+      клиент  – приложение, которое вызывает бэкенд и требует аутентификации и  авторизации
+      сервер авторизации – приложение, которое реализует аутентификацию и безопасное хранение учетных данных
+      сервер ресурсов – бэкенд-приложение, которое авторизует и обслуживает вызовы, отправленные одним или несколькими клиентскими приложениями
+    
+      клиент запрашивает токен у сервера авторизации - далее использует этот токен для доступа к серверу ресурсов
+      
+      Токены
+        непрозрачные – токены, которые не хранят данные. Для реализации авторизации серверу ресурсов обычно необходимо вызвать сервер авторизации, 
+                      предоставить непрозрачный токен и  получить данные. Это так называемый вызов интроспекции (introspection call)
+        прозрачные  – токены, которые хранят данные, что позволяет бэкенду немедленно реализовать авторизацию. Наиболее часто
+                      используемой реализацией прозрачного токена является JSON Web Token (JWT)
+      
+        JSON Web Token
+          заголовок – обычно содержит данные о токене, такие как криптографический алгоритм, используемый для подписи токена,
+                      или идентификатор ключа, который сервер авторизации использовал для его подписи;
+          тело – обычно содержит данные о субъекте, которому был выдан токен, такие как данные клиента и пользователя;
+          подпись – криптографически сгенерированное значение, которое можно использовать для доказательства того, 
+                    что сервер авторизации действительно выдал токен и что никто не изменил его содержимое (заголовок или тело) после его генерации.
+    
+    
+        Получение токена (grant type)
+          Грант в форме кода авторизации
+              при успешной аутентификации сервер авторизации выдает клинту код авторизации,
+              затем по коду авторизации клиент получает у сервера авторизации токен
+              
+          Защита PKCE совместно с кодом авторизации 
+              это защита шага получения токена
+          
+              клиент генерирует верификатор (verifier) - случайное значение, применяет к нему хеш функцию и получает "вызов" (challenge)
+              отправляет его вместо с логином и паролем, сервер авторизации сохраняет его
+              при запросе токена дополнительно к ключу передается challenge и проверяется сервером авторизации
+          
+          Получение токена с предоставлением учетных данных клиента (например когда клиента нет, когда службе необходимо вызвать другую службу)
+              Приложение запрашивает токен доступа с сервера авторизации. Приложение использует свои учетные данные для аутентификации.
+              Если учетные данные действительны, сервер авторизации выдает токен доступа.
+              Приложение использует токен доступа для авторизации при отправке запроса на сервер ресурсов.
+          
+          Использование обновления токенов для получения новых токенов доступа
+              Клиент отправляет токен обновления, чтобы доказать, что он уже прошел аутентификацию ранее.
+              Сервер авторизации распознает токен обновления и  предоставляет клиенту новый токен доступа.
+          
+  OpenID Connect
+    протокол аутентификации, работающий поверх OAuth 2.0
+  
+  
+Cервер авторизации OAuth 2
+          
+  Основные компоненты
+    фильтр конфигурации для конечных точек протокола – конфигурации, специфичные для функционала сервера авторизации, включая различные настройки
+    фильтр конфигурации аутентификации – фильтр для определения конфигураций аутентификации и авторизации, а также конфигураций для
+                                          любых других механизмов безопасности, таких как CSRF и CORS
+    компоненты управления данными пользователя – UserDetailsService и PasswordEncoder
+    управление данными клиента – сервер авторизации использует компонент RegisteredClientRepository для управления учетными данными клиента и другими данными
+    управление парами ключей (используется для подписи и проверки токенов)
+    общие настройки приложения  – компонент AuthorizationServerSettings помогает настраивать общие параметры, такие как конечные точки, которые предоставляет приложение
+  
+  фильтр конфигурации для конечных точек протокола
+  
+    @Bean
+    @Order(1)
+    public SecurityFilterChain asFilterChain(HttpSecurity http) throws Exception {
+
+        OAuth2AuthorizationServerConfigurer authorizationServerConfigurer =
+                new OAuth2AuthorizationServerConfigurer();
+
+        return  http
+                .securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
+                .with(authorizationServerConfigurer, (s) -> s.oidc(Customizer.withDefaults()))
+                .exceptionHandling((e) ->
+                        e.authenticationEntryPoint(
+                                new LoginUrlAuthenticationEntryPoint("/login")))
+                .build();
+    }
+
+  фильтр конфигурации аутентификации
+  
+    @Bean
+    @Order(2)
+    public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
+        return  http
+                    .formLogin(Customizer.withDefaults())
+                    .csrf(csrf -> csrf.disable())
+                    .authorizeHttpRequests(c -> c.anyRequest().authenticated())
+                    .build();
+    }
+  
+  управление данными клиента
+    
+    RegisteredClientRepository работает аналогично интерфейсу UserDetailsService
+    RegisteredClient – описание клиентского приложения, известного серверу авторизации
+    
+    для хранения в БД реализуем свой customRegisteredClientRepository
+    
+    пример хранения в памяти
+      
+      @Bean
+      public RegisteredClientRepository registeredClientRepository() {
+
+          RegisteredClient registeredClient = RegisteredClient
+                  .withId(UUID.randomUUID().toString()) // уникальный внутренний идентификатор
+                  // идентификатор клиента – внешний идентификатор клиента, аналогичный имени пользователя
+                  .clientId("client")
+                  // секрет клиента – аналог пароля пользователя
+                  .clientSecret("secret")
+                  // метод аутентификации клиента – сообщает, какую аутентификацию ожидает сервер авторизации от клиента при отправке
+                  // запросов на токены доступа
+                  .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                  // тип гранта авторизации – тип гранта, разрешенный сервером
+                  // авторизации для этого клиента. Клиент может использовать несколько типов гранта
+                  .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                  // URI перенаправления – один из адресов URI, на который сервер
+                  // авторизации может перенаправить клиента для предоставления кода авторизации в случае гранта в форме кода авторизации
+                  .redirectUri("http://localhost:8080")
+                  // область действия  – определяет цель запроса токена доступа.
+                  // Область действия можно использовать позже в правилах авторизации
+                  .scope(OidcScopes.OPENID)
+                  .build();
+
+          return new InMemoryRegisteredClientRepository(registeredClient);
+      }
+    
+  управление парами ключей (используется для подписи и проверки токенов)
+      
+    при использовании прозрачных токенов сервер авторизации использует закрытый ключ для подписи токенов.
+    Сервер авторизации также предоставляет доступ к открытому ключу, который сервер ресурсов может использовать для проверки токенов.
+    Сервер авторизации управляет парами закрытый–открытый ключ через компонент «источник ключа»  
+  
+    JWKSource – это объект, обеспечивающий управление ключами для сервера авторизации Spring Security
+    
+          Вообще хранение и генерация ключей реализуется через хранилище, 
+          если генерить новые при запуске, то уже выпущенные токены больше не будут работать, т.к. их нельзя будет проверить
+          соответственно отвалятся клиенты
+          Для примера мы генерим на лету
+      
+      import com.nimbusds.jose.jwk.RSAKey;
+      import com.nimbusds.jose.proc.SecurityContext;
+      
+      @Bean
+      public JWKSource<SecurityContext> jwkSource() throws NoSuchAlgorithmException {
+          KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
+          keyPairGenerator.initialize(2048);
+          KeyPair keyPair = keyPairGenerator.generateKeyPair();
+          RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
+          RSAPrivateKey privateKey = (RSAPrivateKey) keyPair.getPrivate();
+          RSAKey rsaKey = new RSAKey.Builder(publicKey)
+                       .privateKey(privateKey)
+                       .keyID(UUID.randomUUID().toString())
+                       .build();
+          JWKSet jwkSet = new JWKSet(rsaKey);
+          return new ImmutableJWKSet<>(jwkSet);
+      }
+      
+  Настройка конечных точек
+    
+    AuthorizationServerSettings - позволяет настраивать все пути конечных точек, которые предоставляет сервер авторизации
+    
+    @Bean
+    public AuthorizationServerSettings authorizationServerSettings() {
+        return AuthorizationServerSettings.builder().build();
+    }
+  
+  Тестим!
+  
+    поиск конечных точек, которые предоставляет сервер авторизации
+    http://localhost:8080/.well-known/openid-configuration
+    
+    Конечная точка авторизации, на которую клиент перенаправит пользователя для аутентификации
+    "authorization_endpoint": "http://localhost:8080/oauth2/authorize"
+    Конечная точка токена, которую клиент вызовет для запроса токена доступа
+    "token_endpoint": "http://localhost:8080/oauth2/token"
+    Конечная точка набора ключей, через которую сервер ресурсов получит открытые ключи, необходимые для проверки токенов
+    "jwks_uri": "http://localhost:8080/oauth2/jwks"
+    Конечная точка интроспекции, которую сервер ресурсов может вызвать для проверки непрозрачных токенов
+    "introspection_endpoint":  "http://localhost:8080/oauth2/introspect"
+    
+    Имитируем действия клиента, получаем ключ
+    
+    http://localhost:8080/oauth2/authorize?response_type=code&client_id=client&scope=openid&redirect_uri=http://localhost:8080&code_challenge=QYPAZ5NU8yvtlQ9erXrUYR-T5AGCjCF47vN-KsaI2A8&code_challenge_method=S256
+    
+    http://localhost:8080/oauth2/authorize?
+        // указывает серверу авторизации, что клиент хочет использовать грант в форме кода авторизации
+        response_type=code&
+        // идентификатор клиента
+        client_id=client&
+        // какую область доступа клиент хочет получить при этой попытке аутентификации
+        scope=openid&
+        // указывает URI, на который сервер авторизации будет перенаправлять пользователя после успешной аутентификации. 
+        // Этот URI должен быть одним из ранее настроенных для текущего клиента в RegisteredClient
+        redirect_uri=http://localhost:8080&
+        // Защита PKCE, верификатор
+        code_challenge=QYPAZ5NU8yvtlQ9erXrUYR-T5AGCjCF47vN-KsaI2A8&
+        code_challenge_method=S256
+    
+    PKCE можно отключить добавив настройку клиента в RegisteredClient
+        .clientSettings(ClientSettings.builder().requireProofKey(false).build())
+
+    авторизуемся и видим что ссылка превратилась (если превратилась в .well-known/.. то нужно вызвать повторно, 
+          это какая то фигня связанная с Chrome DevTools Project Settings) в 
+    
+        http://localhost:8080/?code=dwmTcus3SVh2m3gVUERos_rsW-FmEd8ScxtZIiQGZMr3hVtcBdZAT4d8gWDxpRBgLKw3mwTnZhHKFsuWG322H0kWMfWCICnStc6jKVoY0J2-AjTxsdPtH3zjNRzu-HI3
+
+    запрашиваем токен через POST
+    
+    
+    http://localhost:8080/oauth2/token?
+      client_id=client&
+      redirect_uri=http://localhost:8080&
+      grant_type=authorization_code&
+      code=dwmTcus3SVh2m3gVUERos_rsW-FmEd8ScxtZIiQGZMr3hVtcBdZAT4d8gWDxpRBgLKw3mwTnZhHKFsuWG322H0kWMfWCICnStc6jKVoY0J2-AjTxsdPtH3zjNRzu-HI3&
+      code_verifier=QYPAZ5NU8yvtlQ9erXrUYR-T5AGCjCF47vN-KsaI2A8
+
+    http://localhost:8080/oauth2/token?client_id=client&redirect_uri=http://localhost:8080&grant_type=authorization_code&code=lFZUwV1eWTCxS4sKmzoJC_Ge4lzmaDPLLzuycRsp0ZszbfTDxGxLQgtcQ7b19mfZ9aS56ctQeSPeWYJ2IplTfqZ_9CP6w-HZw0jvL52reUZc9RdUifmTcVI76E2fN6h_
+
+
+  lFZUwV1eWTCxS4sKmzoJC_Ge4lzmaDPLLzuycRsp0ZszbfTDxGxLQgtcQ7b19mfZ9aS56ctQeSPeWYJ2IplTfqZ_9CP6w-HZw0jvL52reUZc9RdUifmTcVI76E2fN6h_
+  
+   -d "client_id=client" -d "redirect_uri=http://localhost:8080" -d "grant_type=authorization_code" -d "code=tEaKYKQ3unM-7l1iOoWgkdnB4sE3nuLCkh6n6PbMf57Xndb6EWgGqbEOn9nyi5xPzXM-oRX2OY0GtqiL1VgweKtO0xU3FegKa8SpRjIhLiK4NmuvSx5Lxqp_pFeOzCqF"
+  
+

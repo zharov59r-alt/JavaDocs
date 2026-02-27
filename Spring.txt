@@ -1,0 +1,958 @@
+Классы описывающие объекты
+  config file - описание нужных нам экземпляров классов и их взаимосвязей
+    Spring container - создание и управление объектами
+
+Способы конфигурации
+  xml
+  анностации + xml
+  java code
+
+Spring Bean - объект который создается и управляется Spring Container
+ApplicationContext - представляет собой Spring Container
+                      для получения бина из Spring Container необходимо создать ApplicationContext
+
+Inversion of control - передава прав по созданию и управлению объектами Spring
+
+Dependency Injection - передача прав по внедрению зависимостей
+                      делает объекты слабо зависимыми друг от друга (убирает хардкод присвоений)
+  реализуется через 
+    конструктор   <constructor-arg ref = "myPet"/>
+    сеттер        <property name="pet" ref="myPet"/>
+    Autowiring
+
+Bean scope (область видимости) определяет
+  жизненный цикл бина
+  количество создаваемых бинов
+  
+  виды
+    singletone
+      default
+      создается ОДИН объект после прочтения конфиг файла
+    prototype
+      создается после обращения (getBean)
+      для каждого обращения 
+    request
+    session
+    global-session
+    
+  жизненный цикл
+    запуск приложения
+    начало работы Spring Container
+    Создание бина 
+    внедрение зависимостей
+    запуск init метода бина
+    бин готов к используем
+    используем бин
+    context.close - выозв destroy метода бина
+    завершение работы приложения
+    
+    init и destroy методы обычно содержат логику по подготовке ресурсов, например подключения к БД
+      для scope prototype метод destroy не вызывается
+
+  
+описание бинов через аннотацию + xml
+  xml - <context:component-scan base-package="demo14"/>
+  склассы бинов помечаются аннотацией 
+    @Component("BeanId")
+    если опустить BeanId то default будет имя сласса с маленькой буквы
+      если первые 2 или более буквы в имени класса заглавные, то id = имя класса
+
+
+@Autowired - ищет есть ли подходящие бины по типу
+  конструктор - если конструктор один, то Spring подхватывает его автоматически
+  сеттер
+  поле
+
+@Qualifier("BeanId") - при наличии нескольких бинов для DI данной аннотацией можно указать какой из них ниспользовать
+                      при использовании с конструктором аннотируется параметр конструктора
+
+@Value - внедрение строк и прочих типов
+        через properties - <context:property-placeholder location="classpath:myApp.properties"/>        
+        @Value("${person.surname}")
+        
+@Scope - указание области видимости
+@PostContruct - уровень метода, обозначает init метод
+@PreDestroy - уровень метода, обозначает destroy метод
+
+
+Конфигурация с помощью java code
+
+  Создается config класса
+    @Configuration - означает что класс является конфигурационным
+    @ComponentScan("packageName") - какой пакет сканируем в поисках бинов
+
+    AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(MyConfig.class);
+
+Способ 2
+  @Bean - уровень метода, указывает что бин создается вручную с помощью метода, имя метода выступает BeanId
+  
+  Для работы @Value в конфиг класс необходимо добавить аннотацию @PropertySource("classpath:myApp.properties")
+
+
+АОП 
+  
+  парадигма программирования, вынесение служебных функций типа проверки прав и логирования в "аспектные" классы
+  
+  <dependency>
+      <groupId>org.aspectj</groupId>
+      <artifactId>aspectjweaver</artifactId>
+  </dependency>
+  
+  @EnableAspectJAutoProxy - класса, указывается в классе конфигурации, включает поддержку Aspect
+  @Aspect - класса, помечает аспект класс
+  
+  Pointcut - выражение где должен быть применен Advice
+    
+    синтаксис выражения
+    execution(modifiers? return-type declaring-type?method-name(parameters) throws?)
+        ? - необязательный
+        declaring-type - <package>.<class>.method-name
+        *
+          method-name - любые символы
+          return-type - любой возвращаемый тип
+          parameters любой параметр, 1 * = 1 параметр
+        .. - parameters любое количество любых параметров
+  
+    Объявление pointcut
+      @Pointcut("execution(* getBook(..))")
+      public void pointcut_name() {}
+      
+      @Before("pointcut_name()")
+      public void beforeLoggingAdvice() {System.out.println("Before Logging");}
+    
+    Комбинирование
+      || && !
+      @Pointcut("pointcut_name1() || pointcut_name2()")
+      public void pointcut_name3() {}
+    
+    Порядок запуска
+      @Order(N) где N порядковый номер
+      
+    JoinPoint
+      получение инфы о методе на котором сработал аспект
+      public void beforeExceptionAdvice(JoinPoint joinPoint) {
+        Signature methodSignature = joinPoint.getSignature();
+        Object[] args = joinPoint.getArgs();
+        и т.д.
+    
+  
+  @Before - метод, выполнение до основного метода
+  @AfterReturning - метод, выполнение после нормального окончания основного метода, НО до присвоения результата этого метода
+    Перехват результата
+      public List<Student> getStudents(){}
+      @AfterReturning(pointcut = "execution(* getStudents())", returning = "students")
+      public void afterReturningGetStudentsLoggongAspect(List<Student> students) {}
+  
+  @AfterThrowing - метод, выполнение после основного метода, только если сработал exception
+    Инфа по ошибке
+      @AfterThrowing(pointcut = "execution(* getStudents())", throwing = "exception")
+      public void afterThrowingGetStudentsLoggongAspect(Throwable exception) {
+    
+  @After - метод, выполнение после основного метода независимо от успешности
+    нельзя получить доступ к исключению и к результату
+    
+  @Around - метод, выполняется до и после основного метода
+    target метод вызывается вручную в методе обработки
+    позволяет получить доступ к исключению и к результату
+    
+      @Around("execution(* second.Book.*(..))")
+      public Object aroundAllMethods(ProceedingJoinPoint proceedingJoinPoint) throws Throwable {
+        long startTime = System.currentTimeMillis();
+        Object targetMethodResult = null;
+        try {
+            targetMethodResult = proceedingJoinPoint.proceed();
+        } catch (Exception e) {
+            System.out.println("aroundAllMethods Exception: " + e.getMessage());
+            
+            targetMethodResult = "default result";
+            ИЛИ
+            throw e; // проброс исключения дальше
+        }
+        System.out.println("aroundAllMethods: " + (System.currentTimeMillis() - startTime) + "ms");
+        return targetMethodResult;
+    }
+    
+    
+Hibernate
+  JPA - спецификация
+  Hibernate - реализация
+
+  @Entity - класс, флаг что класс является таблицей в БД
+  @Table(name="employee", schema = "public") - класс, описание таблицы
+  
+  все таблицы должны содержать поле primary key
+  camelCase автоматом форматируется в имя с разделителем "_"
+
+  @Id - поле, primary key
+  @Column(name = "column_name", columnDefinition = "text") - поле, описание колонки таблицы
+  @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "generator_name") - поле
+  @SequenceGenerator(name = "generator_name", sequenceName = "sequence_name", allocationSize = 1) - класс, поле, описание (создание) секвенции
+    allocationSize - какая то тупая хуйня типа кеширования значений, актуально для массовой вставки, ВСЕГДА ВЫСТАВЛЯТЬ В 1
+
+      @Id
+      @Column(name = "employee_id", columnDefinition = "bigserial")
+      @GeneratedValue(strategy=GenerationType.IDENTITY)
+        НО в таком случае hibernate генерит запрос returning *
+
+      @Id
+      @Column(name = "employee_id")
+      @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "s_employee_id")
+      @SequenceGenerator(name = "s_employee_id", sequenceName = "s_employee_id", allocationSize = 1)
+    
+      strategy=GenerationType.UUID - генерит UUID Java приложением
+    
+    
+  @Transient - поле, не нужно сохранять в БД
+  @Enumerated(EnumType.STRING) - маппинг перечислений, STRING - сохранять как текст, ORDINAL - числовой порядковый номер
+    private Status status;
+  
+  
+  EntityManager
+    изменение данных через setter или merge апдейтит ВСЕ поля таблицы по PK !!!!!
+
+    
+  
+  
+  
+  
+  session.find(Employee.class, 10); // select по PK
+
+  List<Employee> employees =  session.createQuery("from Employee where name = :name", Employee.class)
+                    .setParameter("name", "Second")
+                    .list();
+
+  session.remove(employee); // удаление по ID
+  session.createMutationQuery("delete from Employee where id = :employee_id")
+                    .setParameter("employee_id", 1)
+                    .executeUpdate();
+  
+  можно делать update через сеттеры
+  employee.setSalary(BigDecimal.valueOf(200)); 
+  ВАЖНО - делает апдейт всех полей по ID
+  
+  session.createMutationQuery("update Employee e set e.name=:name where e.id=:id")
+                    .setParameter("name", "Second")
+                    .setParameter("id", qwe.getId())
+                    .executeUpdate();
+                    
+  Связи
+    
+    Один к одному
+    
+      @OneToOne(cascade = CascadeType.ALL) // CascadeType определяет, что должно происходить с зависимыми сущностями, если мы меняем главную сущность
+      
+        ALL выполнять каскадно все операции
+        PERSIST применяет операцию сохранения (персистенции) от основной сущности к связанным сущностям
+        MERGE операцию обновления от основной сущности к связанным сущностям
+        REMOVE операцию удаления от основной сущности к связанным сущностям
+        REFRESH,
+        DETACH если мы удаляем родительский объект из сессии, то это же нужно сделать и с его зависимыми объектами
+      
+      @JoinColumn(name = "department_id", referencedColumnName = "department_id", columnDefinition = "bigint")
+      private Department department;
+      
+      при сохранении главной сущности будет также сохранена и доченяя
+        Department department = new Department(1L, "One");
+        Employee employee = new Employee("1", "1", BigDecimal.valueOf(100));
+        employee.setDepartment(department);
+        session.persist(employee);
+      
+      чтобы связь была в обе стороны
+        @OneToOne(mappedBy = "department", cascade = CascadeType.ALL)
+        private Employee employee;
+  
+  
+    Один ко многим
+      @OneToMany - использовать с mappedBy
+          @OneToMany(mappedBy = "university")
+          @OrderBy("name")
+          List<Student> students = new ArrayList<>();
+      @ManyToOne - использовать с @JoinColumn и @JsonBackReference (чтобы избежать зацикливания при Bi связи)
+          @ManyToOne(fetch = FetchType.LAZY)
+          @JoinColumn(name = "university_id", referencedColumnName = "id")
+          private University university;
+      
+      @OrderBy(str) - поле, можно указать поля класса и направление сортировки
+      
+    Варианты загрузки связанных сущностей
+      @ManyToOne(fetch = FetchType.LAZY)
+      Eager - связанные сущности загружаются вместе с основной (когда мы селектим employee оно генерит join department)
+      Lazy - связанные сущности НЕ загружаются вместе с основной, загружаются при обращении к ним
+      
+    @ManyToMany
+      реализуется через join table
+    
+      @JoinTable( name = "user_role_link",
+              schema = "public",
+              joinColumns = { @JoinColumn(name = "role_id") },
+              inverseJoinColumns = { @JoinColumn(name = "user_id") })
+    
+  https://sky.pro/wiki/media/raznicza-mezhdu-jpa-joincolumn-i-mappedby/
+  
+    Владеющая сторона — определяет, где в базе данных создается столбец внешнего ключа (foreign key).
+    Невладеющая сторона — просто ссылается на владеющую сторону и не влияет на физическую структуру таблицы.
+    
+    
+    @ManyToOne всегда является владеющей стороной с @JoinColumn
+    @OneToMany использует mappedBy
+    
+      User
+        @OneToMany(mappedBy = "user") // где user - поле класса UserRole
+        private List<UserRole> userRoles;
+    
+      UserRole
+        @ManyToOne
+        @JoinColumn(name = "user_id", referencedColumnName = "user_id", nullable = false) // name - поле в текущей таблице, referencedColumnName - поле в таблице родителя
+        private User user;
+      
+      
+Criteria Query
+  
+  CriteriaBuilder criteriaBuilder = entityManager.getCriteriaBuilder();
+  CriteriaQuery<Student> criteriaQuery = criteriaBuilder.createQuery(Student.class);
+  Root<Student> root = criteriaQuery.from(Student.class); // from Student s
+  criteriaQuery.select(root); // select s from Student s
+  TypedQuery<Student> query = entityManager.createQuery(criteriaQuery);
+      
+  
+  CriteriaBuilder criteriaBuilder = entityManager.getCriteriaBuilder();
+  CriteriaQuery<String> criteriaQuery = criteriaBuilder.createQuery(String.class); // String потому что хотим получить только столбец name
+  Root<Student> root = criteriaQuery.from(Student.class);
+  criteriaQuery.select(root.get("name"));
+  TypedQuery<String> query = entityManager.createQuery(criteriaQuery);
+      
+  
+  CriteriaBuilder criteriaBuilder = entityManager.getCriteriaBuilder();
+  CriteriaQuery<Student> criteriaQuery = criteriaBuilder.createQuery(Student.class);
+  Root<Student> root = criteriaQuery.from(Student.class);
+  // объявляем именованный параметр
+  ParameterExpression<String> nameParam = criteriaBuilder.parameter(String.class, "name");
+  // описываем условие добавляемое в where
+  Predicate namePredicate = criteriaBuilder.equal(root.get("name"), nameParam);
+  // добавляем условие в where
+  criteriaQuery.where(namePredicate);
+  criteriaQuery.select(root);
+  TypedQuery<Student> query = entityManager.createQuery(criteriaQuery);
+  query.setParameter("name", "1");
+      
+      
+  // выборка нескольких полей
+  CriteriaBuilder criteriaBuilder = entityManager.getCriteriaBuilder();
+  CriteriaQuery<Tuple> criteriaQuery = criteriaBuilder.createTupleQuery();
+  Root<Student> root = criteriaQuery.from(Student.class);
+  Path<String> namePath = root.get("name");
+  Path<String> surnamePath = root.get("surname");
+  CompoundSelection<Tuple> select = criteriaBuilder.tuple(namePath,  surnamePath);
+  criteriaQuery.select(select);
+  TypedQuery<Tuple> query = entityManager.createQuery(criteriaQuery);
+      
+  // join
+  CriteriaBuilder criteriaBuilder = entityManager.getCriteriaBuilder();
+  CriteriaQuery<Tuple> criteriaQuery = criteriaBuilder.createTupleQuery();
+  Root<University> rootUniversity = criteriaQuery.from(University.class);
+  Join<University, Student> joinStudent = rootUniversity.join("students");
+  Path<String> nameUniversityPath = rootUniversity.get("name");
+  Path<String> nameStudentPath = joinStudent.get("name");
+  CompoundSelection<Tuple> select = criteriaBuilder.tuple(nameUniversityPath,  nameStudentPath);
+  criteriaQuery.select(select);
+  TypedQuery<Tuple> query = entityManager.createQuery(criteriaQuery);
+      
+      
+      
+      
+      
+       
+    
+MVC
+  
+  DispatcherServlet - принимает и обрабатывает все HTTP-запросы (из UI) и ответы на них - по сути парсер HTTP запросов + генератор ответов
+      После получения HTTP-запроса DispatcherServlet обращается к интерфейсу HandlerMapping, 
+      который определяет, какой Контроллер должен быть вызван, после чего, отправляет запрос в нужный Контроллер.
+  
+  @Controller - класс, указывает что класс является контроллером, содержит внутри @Component =>
+                механизм сканирования в  Spring автоматически обнаружит его и  создаст экземпляр класса как bean-компонент
+  
+  @RequestMapping(String arg) - класс/метод, обработка запросов по пути arg
+                                при указании у класса и у его методов, путям методов будет добавлятся arg_class
+                                
+                                @RequestMapping(/user)
+                                  @RequestMapping(/get) -> /user/get
+                                
+    Метод
+      @GetMapping Обработка HTTP-запросов GET
+                  Способ передачи данных Через URL
+                  Направление передачи От клиента к серверу
+                  Передача параметров через адресную строку
+      @PostMapping Обработка HTTP-запросов POST
+                  Способ передачи данных В теле HTTP-запроса
+                  Направление передачи От сервера к клиенту
+                  формы ввода, логина и т.д.
+                  передача файлов
+      @PutMapping Обработка HTTP-запросов PUT
+                  Загружает данные по указанному URI. Если ресурс существует, он перезаписывается.
+      @DeleteMapping Обработка HTTP-запросов DELETE
+                  Удаляет указанный ресурс.
+      @PatchMapping Обработка HTTP-запросов PATCH
+                  Применяется для частичного изменения ресурса 
+  
+  
+  public String showEmployeeDetails(HttpServletRequest request, Model model) {
+    HttpServletRequest - данные по http запросу
+    Model - модель, в которую можно напихать данных и далее использовать во view
+  
+  другой способ получения данных с формы
+  @RequestParam() - параметр
+    пример
+    public String showEmployeeDetails(
+              @RequestParam("employeeName") String empName, 
+              Model model
+      ) {
+
+  @ModelAttribute - метод\параметр, даем доступ на использование бина для view 
+    public String showEmployeeDetails(@ModelAttribute("employee") Employee employee) {
+  
+  1 вариант добавления параметра в модель
+      @RequestMapping("/askDetails")
+      public String askEmployeeDetails(Model model) {
+          model.addAttribute("employee", new Employee());
+          return "ask-emp-details-view";
+      }
+  
+  2 вариант
+    @ModelAttribute(name = "employee")
+    public Employee employee() {
+        return new Employee();
+    }
+    
+    @RequestMapping("/askDetails")
+    public String askEmployeeDetails() {
+        return "ask-emp-details-view";
+    }
+  
+  Валидация
+    
+    @Valid - параметр метода, говорит о том что нужно его валидировать
+      public String showEmployeeDetails(@Valid @ModelAttribute("employee") Employee employee,
+                                        BindingResult bindingResult) {
+          if (bindingResult.hasErrors())
+    
+
+  DAO data access object
+  
+  @Repository - класс, специализированная аннотация для регистрации DAO 
+  
+  @Transactional метод\класс - делегирование открытия\закрытия транзакций
+  
+  @Service класс, специализированная аннотация для регистрации сервиса
+           сервис содержит бизнес логику, звено между контроллером и репой
+  
+
+REST
+
+  @RestController - класс, составная аннотация 
+    @Controller
+    @ResponseBody
+    используется для создания RESTful-веб-сервисов, автоматически преобразуя объекты Java в формат JSON или XML, возвращая данные непосредственно в тело HTTP-ответа
+
+  
+  @Configuration
+    @EnableWebMvc - Включает Spring MVC: Импортирует DelegatingWebMvcConfiguration, которая настраивает все основные компоненты Spring MVC.
+                  аналог <mvc:annotation-driven/>
+    @EnableTransactionManagement аналог <tx:annotation-driven transaction-manager="transactionManager" />
+  
+  
+    @ExceptionHandler // метод для обработки исключений
+    //ResponseEntity обертка http response EmployeeIncorrectData - объект который будет добавлен в body
+    public ResponseEntity<EmployeeIncorrectData> handleException(NoSuchEmployeeException exception) {
+        EmployeeIncorrectData data = new EmployeeIncorrectData();
+        data.setInfo(exception.getMessage());
+        return new ResponseEntity<>(data, HttpStatus.NOT_FOUND);
+    }
+  
+    
+    @ControllerAdvice - класс, глобальная обработка исключений
+                        перехватывает exception контроллеров
+                        АОП функционал
+  
+    
+    @PostMapping("/employees")
+    public Employee addEmployee(@RequestBody Employee employee) {
+  
+    @RequestBody - указывает что тело HTTP запроса должно быть преобразовано к формату класса Employee
+  
+  
+    @DeleteMapping("/employees/{id}")
+    public String removeEmployee(@PathVariable("id") Long id) {
+  
+  
+Security
+
+  Аутентификация - Проверка подлинности пользователя или процесса login-password
+  Авторизация - Процесс наделения правами и определение, что пользователь может делать после успешной аутентификации.
+  
+  
+  @EnableWebSecurity — это аннотация в Spring Security, которая активирует поддержку веб-безопасности, 
+                      регистрирует цепочку фильтров Spring Security и отключает автоконфигурацию по умолчанию, 
+                      позволяя вам настроить аутентификацию и авторизацию для HTTP-запросов вашего приложения, 
+                      например, правила доступа к URL-адресам или страницы входа
+
+Security
+
+
+    
+    
+    
+    
+  
+  
+  
+  
+  
+  
+Spring Boot
+  автоматическая конфигурации, например бинов для БД, не нужно описывать datasource, sessionFactory и т.д.
+  оптимизация работы с зависимостями через starter пакеты
+  встроенная поддержка tomcat
+  
+  приложение запускаться из выполняемого JAR файла
+  метод main() будет вызываться в момент запуска файла JAR
+
+  @SpringBootApplication - это составная аннотация
+    @SpringBootConfiguration –  определяет класс как класс конфигурации (настройки Spring Framework)
+                                по сути, является специализированной формой аннотации 
+      @Configuration
+    @EnableAutoConfiguration – включает автоконфигурацию Spring Application Context
+    @ComponentScan - Пакета в котором расположен класс передаваемый в run()
+  
+  Метод run() принимает два параметра: класс конфигурации и  аргументы командной строки
+  
+  При запуске приложение происходит создание Spring Container, сканирование бинов, поднимается Tomcat
+  
+  
+JPA
+  
+  SessionFactory - функционал Hibernate
+  При работе через JPA используется EntityManager из него можно получить session
+  
+  interface EmployeeRepository extends JpaRepository<T, ID> где T реализуемый класс, ID - primary key
+    JpaRepository содержит 100500 методов CRUD и прочего
+    
+  List<TacoOrder> findByDeliveryZip(String deliveryZip);
+  Методы репозитория формируются из глагола, необязательного подлежащего, слова By и предиката. В имени findByDeliveryZip() глаголом является find
+  (найти), а предикатом – DeliveryZip (почтовый индекс, или район доставки); подлежащее не указано, и  по умолчанию подразумевается TacoOrder.
+
+  @Query - метод, указывает какой запрос выполнить
+
+  @Query("Order o where o.deliveryCity=’Seattle’")
+  List<TacoOrder> readOrdersDeliveredInSeattle();
+  
+
+Persistence context
+
+  
+  создается при создании экземпляра EntityManager
+  посредник между приложением и БД
+  экземпляр EntityManager в Spring Boot создается при необходимости работы с базой данных, обычно внутри транзакции или при запросе компонента 
+  экземпляр EntityManagerFactory - создается на уровне приложения
+    
+    Управление сущностями: Интерфейс EntityManager используется для управления этим контекстом. 
+                          Все действия (persist, merge, remove, find) происходят внутри него
+    Кэш первого уровня: При запросе сущности EntityManager сначала ищет её в контексте, уменьшая количество запросов к БД
+    Синхронизация (Flush): Изменения, внесенные в сущности, не отправляются в базу данных немедленно. 
+                          Сброс (flush) происходит автоматически при завершении транзакции или принудительно через flush()
+    Отслеживание изменений (Automatic Dirty Checking):
+                          При помещении объекта в контекст создается его снапшот (исключаеются поля @Transient)
+                          при выполнении flush и commit SQL генерится только для измененных объектов
+                          
+                            
+                            
+    
+  Entity States
+                                                                                                                                       
+  
+    Transient (New) - проставляется при создании экземпляра entity
+    Persistent (Managed) - Entity находится в контексте
+                          проставляется при вызове метода persist() на Transient экземпляре
+                          при получении экземпляра через find()
+                          
+                          добавляет Entity в контекст
+    Detached - проставляется при закрытии EntityManager или вызове detach()
+                экзепляр убирается из контекста и не будет синхронизирован с БД
+    Removed - проставляется при вызове remove(), объект будет удален из БД при синхронизации
+    
+  ВАЖНО
+    т.к. это умный кеш, то возникает ситуация
+      получаем данные find() - данные в контексте - меняем данные - открываем транзакцию и просто коммитим - происходит update и коммит
+    нужно учитывать что из-за кеширования последовательность операторов в коде не соответствует реальному их выполнению
+                                           
+                                                         
+                                  
+
+                                         
+    
+    а если сделать следующее
+      transaction.begin();
+      Student student1 = entityManager.find(Student.class, 1);
+      entityManager.remove(student1);
+      entityManager.flush(); // выполняет команду delete
+      entityManager.persist(student1); // ОТПРАВЛЯЕТ В БД КОМАНДУ ROLLBACK И ЗАКРЫВАЕТ ТРАНЗАКЦИЮ
+      Student student2 = new Student("Second", "Second", BigDecimal.valueOf(5));
+      entityManager.persist(student2); // ЭТОТ INSERT НИКОГДА!!! НЕ ВЫПОЛНИТСЯ
+      transaction.commit();
+      
+    А вот так он выполнит insert но из-за rollback будет откат
+      transaction.begin();
+      Student student1 = entityManager.find(Student.class, 1);
+      Student student2 = new Student("Second", "Second", BigDecimal.valueOf(5));
+      entityManager.persist(student2);
+      entityManager.remove(student1);
+      entityManager.flush();
+      entityManager.persist(student1);
+      transaction.commit();
+      
+    ВЫВОД
+      если сделал remove и flush то обратно не привязывать иначе отправляется rollback...
+    
+  
+  Метод 
+    void persist(Object var1) - делает новый объект сущности управляемым (Managed) и персистентным, 
+                                добавляя его в контекст сохранения. Он регистрирует объект для последующей 
+                                вставки в базу данных (SQL INSERT) при фиксации транзакции (commit) или при flush
+    boolean contains(Object var1) - проверяет находится ли Entity в Persistence context
+    void flush() - принудительно синхронизирует состояние контекста персистентности с БД - выполняет накопленные SQL
+    void detach(Object var1) - изменяет статус на Detached
+                              можно использовать для экономии памяти и ускорения фиксации, 
+                              т.к. придется меньше объектов проверять на необходимость синхронизации
+    void refresh(Object var1) - обновляет состояние управляемой сущности, перезаписывая её текущие значения данными из базы данных
+    void clear() - очищает контекст персистентности, отсоединяя (detaching) все загруженные сущности от менеджера
+    <T> T merge(T var1) - переносит состояние отсоединенного (detached) объекта в персистентный контекст (Persistence Context), обновляя данные в БД
+                          делает select по ID, копирует в экземпляр изменения из переданного объекта и возвращает управляемую (managed) >>> КОПИЮ <<< 
+                          При этом исходный переданный объект остается отсоединенным.
+                          при синхронизации если объекта в БД не нашлось, то выполнится insert, если нашелся, то update всех полей
+  
+                 
+  
+  Second Level Cache - кеш на уровне EntityManagerFactory устанавливается отдельно
+  @Cacheable - класс Entity
+
+                                         
+    
+                                                                                                                 
+                                                                                             
+    
+                   
+                                    
+                                                                                        
+  
+  Аннотации методов Entity
+  @PrePersist - метод, вызывается после выполнения persist() и merge() и перед выполнением insert
+  @PostPersist - ПОСЛЕ выполнением insert
+  @PreUpdate - метод, выполняется перед update 
+  @PostUpdate - после
+  @PreRemove
+  @PostRemove
+  @PostLoad - вызывается после find() и refresh()
+  
+                    
+  
+JPQL
+
+  ВЫГРУЗКА ПРОИСХОДИТ В КОНТЕКСТ!!!
+  Оперирует именами классов и полей, А НЕ ТАБЛИЦЫ
+  
+  Query query = entityManager.createQuery("select s from Student s");
+                                       
+  List<Student> students = query.getResultList();
+  
+  TypedQuery<Student> query = entityManager.createQuery("select s from Student s", Student.class);
+  List<Student> students = query.getResultList();
+  
+  String name = null;
+  List<StudentDTO> students = entityManager.createQuery(
+          "select s.name " +
+          "from Student s " +
+          "where :name is null or :name is not null and name = :name", StudentDTO.class)
+          .setParameter("name", name)
+          .getResultList();
+    
+          "where s.name like '%'||:name||'%'"
+    
+  
+  List<Object[]> info = entityManager.createQuery("select s.name, s.surname from Student s").getResultList();
+
+  for (var elem: info)
+      System.out.println(elem[0] + " " + elem[1]); // 0 - name 1 - surname
+
+Расширение Entity
+
+  Часть полей Entity можно вынести в отдельный класс
+  
+    @Embeddable - класс расширения
+    public class StudentInfo {
+        @Column(name="surname")
+        private String surname;
+  
+    @Entity
+    @Table(name = "student", schema = "jdbc1")
+    public class Student {
+        @Embedded - поле расширения
+        // если например класс расширения используется для многих Entity и в каждом название полей таблицы отличаются
+        // то при помощи данной анностации можно переназначить имена полей
+        @AttributeOverrides({
+                @AttributeOverride(name = "surname", column = @Column(name = "surname"))
+        })
+        private StudentInfo studentInfo;
+  
+  
+Collection Mapping
+
+  public class Student {
+  
+    @Id
+    private Long id;
+    
+    @ElementCollection - поле Entity
+    @CollectionTable(name = "link_table", joinColumns = @JoinColumn(name = "student_id"))
+    @Column(name = "arr")
+    private List<String> arr = new ArrayList<>();
+    
+  по сути это описание отдельной таблицы в Entity
+  будет ожидать отдельную таблицу link_table(Student_id bigint, arr text) где Student_id - fk Student.id
+  
+  Также можно сделать вместо List<String> например List<StudentInfo>
+    
+Наследование Entity
+
+  Single Table
+
+    @DiscriminatorColumn(name = "emp_type")
+    @Inheritance(strategy = InheritanceType.SINGLE_TABLE)
+    public abstract class Employee
+
+    public class Teacher extends Employee
+    
+    будет ожидать таблицу Employee с полем emp_type text в которую будет инсертить "Teacher"
+
+  Joined
+  
+    @Inheritance(strategy = InheritanceType.JOINED)
+    public abstract class Employee
+
+    public class Teacher extends Employee
+  
+    будет ожидать таблицу Employee и Teacher дополненную полем id, по сути это как OneToOne
+
+    При этом при запросе Employee будет left join Teacher, а если наследников больше, то все будут left join...
+  
+  Table per class
+  
+    @Inheritance(strategy = InheritanceType.TABLE_PER_CLASS)
+    public abstract class Employee
+
+    public class Teacher extends Employee
+    
+    будет ожидать таблицу Teacher дополненную всеми полями из Employee
+    При этом при запросе Employee будет union всех дочерних
+    
+  @MappedSuperclass
+    аналогия TABLE_PER_CLASS
+    но Employee не является Entity и селектить его нельзя
+  
+  
+Проблема N+1
+  
+  public class Student
+    @ManyToOne(fetch = FetchType.LAZY)
+    private University university;
+  
+  public class University
+    @OneToMany(mappedBy = "university")
+    List<Student> students = new ArrayList<>();
+  
+  чтобы достать данные из University генерится N запросов where id = х
+  чтобы этого избежать
+  
+    @BatchSize(size = 100)
+    List<Student> students = new ArrayList<>();
+    
+  тогда сгенерится 1 запрос where id = any()
+  
+  и все равно это тупо потому что лучше сделать явный join...
+  
+  
+  
+  
+  
+Структура HTTP-сообщения
+  
+  Стартовая строка запроса
+    метод - URL - версия протокола HTTP
+    
+    методы
+      GET     Способ передачи данных Через URL
+              Направление передачи От клиента к серверу
+              Передача параметров через адресную строку
+      POST    Способ передачи данных В теле HTTP-запроса
+              Направление передачи От сервера к клиенту
+              формы ввода, логина и т.д.
+              передача файлов
+      PUT     Загружает данные по указанному URI. Если ресурс существует, он перезаписывается.
+      DELETE  Удаляет указанный ресурс.
+      PATCH   Применяется для частичного изменения ресурса 
+  
+  Стартовая строка ответа
+    версия протокола HTTP - код ответа
+    
+    ответы
+      1** Информационные ответы
+      2** Успешные ответы
+      3** Сообщения о перенаправлении
+      4** Ошибки клиента (запрос был сформулирован клиентом некорректно, например, содержит неверные данные или не может быть выполнен)
+      5** Ошибки сервера
+      
+  Заголовок
+    Accept - список типов данных, которые клиент может от него принять и корректно обработать
+    Host - адрес сервера, которому нужно отправить запрос
+    Content-Length - размер тела сообщения в байтах
+    Content-Type - тип передаваемых данных
+    ...
+      
+  Тело - данные
+      
+  
+сериализация
+    Процесс трансформации Java-объекта в какой-то другой формат
+  
+  Gson
+    String json = "{ \"user\": \"Алексей\"";
+    Gson gson = new Gson();
+    User user = gson.fromJson(json, LastLikeInfo.class);
+    json = gson.toJson(user);
+  
+  GsonBuilder 
+  
+    GsonBuilder gsonBuilder = new GsonBuilder();
+    Gson gson = gsonBuilder.create(); 
+    
+    Настройки
+      prettyPrinting  // форматирование, в одну строку \ с переносами
+        gsonBuilder.setPrettyPrinting();
+      
+      serializeNulls // Поля содержащие null будут попадать в JSON
+        gsonBuilder.serializeNulls();
+  
+      registerTypeAdapter // позволяет реализовать свой сериализатор
+        registerTypeAdapter(Type type, Object typeAdapter)
+          type - класс который будем сериализовать
+          typeAdapter - правила конвертации
+            Чтобы написать свой конвертер, необходимо наследовать от абстрактного класса TypeAdapter, 
+            передав ему в качестве параметра типа класс, для которого требуется изменить логику сериализации. 
+            А затем переопределить методы write(...) и read(...).
+  
+        class LocalDateAdapter extends TypeAdapter<LocalDate> {
+            private static final DateTimeFormatter dtf = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+
+            @Override
+            public void write(final JsonWriter jsonWriter, final LocalDate localDate) throws IOException {
+                jsonWriter.value(localDate.format(dtf));
+            }
+
+            @Override
+            public LocalDate read(final JsonReader jsonReader) throws IOException {
+                return LocalDate.parse(jsonReader.nextString(), dtf);
+            }
+        } 
+        
+        GsonBuilder gsonBuilder = new GsonBuilder();
+        gsonBuilder.registerTypeAdapter(LocalDate.class, new LocalDateAdapter());
+        Gson gson = gsonBuilder.create(); 
+  
+                                              
+                                                              
+    
+    Gson gson = new GsonBuilder()
+        .serializeNulls()
+        .setPrettyPrinting()
+        .registerTypeAdapter(LocalDate.class, new LocalDateAdapter())
+        // любые другие методы билдера
+        .create(); // завершаем построение объекта 
+
+                    
+                                                                                                                                                                 
+                                                                                                 
+                                                                             
+                                                               
+       
+      
+                         
+      
+  
+  десериализация списков
+  
+    через вспомогательный класс наследованный от TypeToken
+      class UserListTypeToken extends TypeToken<List<User>> {} 
+      gson.fromJson(usersArrayJson, new UserListTypeToken().getType()); 
+
+
+HTTP client
+
+  java.net.URI — описывает адрес нужного ресурса.
+  
+  java.net.http
+    HttpRequest — описывает HTTP-запрос к серверу. Экземпляры этого класса создаёт разработчик программы HTTP-клиента.
+    HttpResponse — описывает HTTP-ответ сервера. Экземпляры этого класса возвращаются в ответ на отправленные программой запросы.
+    HttpClient — реализует коммуникацию с сервером по протоколу HTTP. Отправляет запросы, 
+        описанные разработчиком в виде экземпляров HttpRequest, а также получает ответы и преобразует их в экземпляры HttpResponse.
+
+  // создаём экземпляр URI, содержащий адрес нужного ресурса
+  URI uri = URI.create("https://ru.wikipedia.org/wiki/Список_кодов_состояния_HTTP");
+
+  // получаем экземпляр класса-строителя
+  HttpRequest.Builder requestBuilder = HttpRequest.newBuilder();
+
+  // создаём объект, описывающий HTTP-запрос
+  HttpRequest request = requestBuilder
+          .GET()    // указываем HTTP-метод запроса
+          .uri(uri) // указываем адрес ресурса
+          .version(HttpClient.Version.HTTP_1_1) // указываем версию протокола HTTP
+          .header("Accept", "text/html") // указываем заголовок Accept
+          .build(); // заканчиваем настройку и создаём ("строим") HTTP-запрос 
+
+  HttpClient client = HttpClient.newBuilder() // получаем экземпляр билдера
+        .connectTimeout(Duration.ofSeconds(5)) // указываем максимальное время ожидания соединения с сервером
+        .build(); // заканчиваем настройку и создаём ("строим") HTTP-клиент 
+
+  или с настройками по умолчанию
+  HttpClient client = HttpClient.newHttpClient(); 
+
+    метод
+      <T> HttpResponse<T> send(
+        HttpRequest request, 
+        HttpResponse.BodyHandler<T> responseBodyHandler)
+              интерфейс, который помогает HTTP-клиенту преобразовать тело ответа из набора байтов в Java-объект. 
+              В Java имеются готовые реализации этого интерфейса. 
+              Они доступны в классе HttpResponse.BodyHandlers. Например, HttpResponse.BodyHandlers.ofString() возвращает обработчик, 
+              позволяющий преобразовать тело ответа из набора байтов в строку.
+        throws IOException, InterruptedException;
+
+  HttpResponse.BodyHandler<String> handler = HttpResponse.BodyHandlers.ofString();
+  HttpResponse<String> response = client.send(request, handler);
+    
+
+  IOException
+    ConnectException - проблемы с сетевой коммуникацией. обрыв соединения, невозможность установить соединение (несуществующий адрес)
+
+  InterruptedException - например таймаут на стороне клиента
+  
+
+
+  isJsonObject — проверяет, что JsonElement является объектом.
+  isJsonArray — проверяет, что JsonElement является массивом.
+  isJsonPrimitive — проверяет, что JsonElement хранит примитивное значение.
+  isJsonNull — проверяет, что JsonElement хранит null.
+  getAsJsonObject — конвертирует JsonElement, являющийся объектом, в экземпляр класса JsonObject. 
+                    У полученного экземпляра JsonObject можно вызвать метод get(String), 
+                    который позволяет получить значение отдельного поля по его имени. Метод get снова возвращает объект JsonElement.
+  getAsJsonArray — конвертирует JsonElement в экземпляр класса JsonArray.
+  getAsString, getAsLong, getAsBoolean — извлекают из JsonElement, хранящего примитивное значение, значение соответствующего типа данных в Java.
+

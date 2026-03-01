@@ -815,7 +815,7 @@ Cервер авторизации OAuth 2
     
     Имитируем действия клиента, получаем ключ
     
-    http://localhost:8080/oauth2/authorize?response_type=code&client_id=client&scope=openid&redirect_uri=http://localhost:8080&code_challenge=QYPAZ5NU8yvtlQ9erXrUYR-T5AGCjCF47vN-KsaI2A8&code_challenge_method=S256
+    http://localhost:8080/oauth2/authorize?response_type=code&client_id=client&scope=openid&redirect_uri=http://localhost:8080&code_challenge=1DM0IUEdn7tVh6Qt3WB4s7V_poqRB2rroiLV3oiyfU8&code_challenge_method=S256
     
     http://localhost:8080/oauth2/authorize?
         // указывает серверу авторизации, что клиент хочет использовать грант в форме кода авторизации
@@ -828,32 +828,310 @@ Cервер авторизации OAuth 2
         // Этот URI должен быть одним из ранее настроенных для текущего клиента в RegisteredClient
         redirect_uri=http://localhost:8080&
         // Защита PKCE, верификатор
-        code_challenge=QYPAZ5NU8yvtlQ9erXrUYR-T5AGCjCF47vN-KsaI2A8&
+        code_challenge=1DM0IUEdn7tVh6Qt3WB4s7V_poqRB2rroiLV3oiyfU8&
         code_challenge_method=S256
-    
-    PKCE можно отключить добавив настройку клиента в RegisteredClient
-        .clientSettings(ClientSettings.builder().requireProofKey(false).build())
 
     авторизуемся и видим что ссылка превратилась (если превратилась в .well-known/.. то нужно вызвать повторно, 
           это какая то фигня связанная с Chrome DevTools Project Settings) в 
     
         http://localhost:8080/?code=dwmTcus3SVh2m3gVUERos_rsW-FmEd8ScxtZIiQGZMr3hVtcBdZAT4d8gWDxpRBgLKw3mwTnZhHKFsuWG322H0kWMfWCICnStc6jKVoY0J2-AjTxsdPtH3zjNRzu-HI3
 
-    запрашиваем токен через POST
+    запрашиваем токен через POST, Auth Basic указываем client:secret
+    
+        В POSTMAN параметры указываются во вкладке body - form-data или x-www-form-urlencoded
+        в curl через опцию -d
+        
+      http://localhost:8080/oauth2/token
+        client_id = client
+        redirect_uri = http://localhost:8080
+        grant_type = authorization_code
+        code = dwmTcus3SVh2m3gVUERos_rsW-FmEd8ScxtZIiQGZMr3hVtcBdZAT4d8gWDxpRBgLKw3mwTnZhHKFsuWG322H0kWMfWCICnStc6jKVoY0J2-AjTxsdPtH3zjNRzu-HI3
+        code_verifier = g7VS--iEPbcZZV0e-_i2mPeVecjwVeCvx1tweXcCfxs
+      
+      
+   
+    PKCE можно отключить добавив настройку клиента в RegisteredClient
+        .clientSettings(ClientSettings.builder().requireProofKey(false).build())
+        
+        Сгенерить code_challenge и code_verifier можно следующим кодом
+        
+        SecureRandom secureRandom = new SecureRandom();
+        byte [] code = new byte[32];
+        secureRandom.nextBytes(code);
+        String codeVerifier = Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(code);
+
+        log.info("codeVerifier: {}", codeVerifier);
+
+        MessageDigest messageDigest = null;
+        try {
+            messageDigest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+
+        byte [] digested = messageDigest.digest(codeVerifier.getBytes());
+        String codeChallenge = Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(digested);
+
+        log.info("codeChallenge: {}", codeChallenge);
+        
+        
+  Получение токена с предоставлением учетных данных клиента
+        
+    RegisteredClient registeredClient = RegisteredClient
+            .withId(UUID.randomUUID().toString())
+            .clientId("client")
+            .clientSecret("secret")
+            .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+            .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+            .scope("CUSTOM")
+            .build();
+              
+    запрашиваем токен через POST, Auth Basic указываем client:secret
+    
+        В POSTMAN параметры указываются во вкладке body - form-data или x-www-form-urlencoded
+        в curl через опцию -d
+    
+        http://localhost:8080/oauth2/token
+          grant_type = client_credentials
+          scope = CUSTOM
+          
+  Использование непрозрачных токенов и интроспекции
+  
+    RegisteredClient registeredClient = RegisteredClient
+            .withId(UUID.randomUUID().toString())
+            .clientId("client")
+            .clientSecret("secret")
+            .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+            .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+            .tokenSettings(TokenSettings.builder()
+                            .accessTokenFormat(OAuth2TokenFormat.REFERENCE)
+                            // задает время жизни токена
+                            .accessTokenTimeToLive(Duration.ofHours(12)) 
+                            .build())
+            .scope("CUSTOM")
+            .build();
     
     
-    http://localhost:8080/oauth2/token?
-      client_id=client&
-      redirect_uri=http://localhost:8080&
-      grant_type=authorization_code&
-      code=dwmTcus3SVh2m3gVUERos_rsW-FmEd8ScxtZIiQGZMr3hVtcBdZAT4d8gWDxpRBgLKw3mwTnZhHKFsuWG322H0kWMfWCICnStc6jKVoY0J2-AjTxsdPtH3zjNRzu-HI3&
-      code_verifier=QYPAZ5NU8yvtlQ9erXrUYR-T5AGCjCF47vN-KsaI2A8
-
-    http://localhost:8080/oauth2/token?client_id=client&redirect_uri=http://localhost:8080&grant_type=authorization_code&code=lFZUwV1eWTCxS4sKmzoJC_Ge4lzmaDPLLzuycRsp0ZszbfTDxGxLQgtcQ7b19mfZ9aS56ctQeSPeWYJ2IplTfqZ_9CP6w-HZw0jvL52reUZc9RdUifmTcVI76E2fN6h_
-
-
-  lFZUwV1eWTCxS4sKmzoJC_Ge4lzmaDPLLzuycRsp0ZszbfTDxGxLQgtcQ7b19mfZ9aS56ctQeSPeWYJ2IplTfqZ_9CP6w-HZw0jvL52reUZc9RdUifmTcVI76E2fN6h_
+        http://localhost:8080/oauth2/token
+          grant_type = client_credentials
+          scope = CUSTOM
+    
+        {
+            "access_token": "O7jmrEnUSb0mu2xzFbfo1uWUs7WayOF_CwMG0SLuCenJhpZDjS1I8xcZjjYvSPIydtju9n8xi24bcDG4I0Yu1ZSue9gm8S7KWtmjyeFgqdDTmZVEOId1NafJ5eiJyHHN",
+            "scope": "CUSTOM",
+            "token_type": "Bearer",
+            "expires_in": 300
+        }
+    
+    с полученным токеном мы можем выполнить интроспекцию
+      
+      http://localhost:8080/oauth2/introspect
+        
+        token = RQtmvXb69Ghv6XPdjetanHCggwIhHL-iJgQrZo5fw2w5-T5_FLjBhBz4xF66r1U9Q99g63nb1YcNPIo-thyAmzzv0zp8ZZN3-nrXQkTwsmhj0pH6R7PbJGTRVSR-H7xb
+      
+          {
+              "active": true,
+              "sub": "client",
+              "aud": [
+                  "client"
+              ],
+              "nbf": 1772276978,
+              "scope": "CUSTOM",
+              "iss": "http://localhost:8080",
+              "exp": 1772277278,
+              "iat": 1772276978,
+              "jti": "58048a9a-42ea-4041-adc7-485522d1333a",
+              "client_id": "client",
+              "token_type": "Bearer"
+          }
+      
+Сервер ресурсов
   
-   -d "client_id=client" -d "redirect_uri=http://localhost:8080" -d "grant_type=authorization_code" -d "code=tEaKYKQ3unM-7l1iOoWgkdnB4sE3nuLCkh6n6PbMf57Xndb6EWgGqbEOn9nyi5xPzXM-oRX2OY0GtqiL1VgweKtO0xU3FegKa8SpRjIhLiK4NmuvSx5Lxqp_pFeOzCqF"
-  
+  Сервер авторизации предоставляет URL конфигурации, в нашем случае
+      http://localhost:8080/.well-known/openid-configuration
 
+  из него мы получаем URL для получения набора открытых ключей, 
+  
+    "jwks_uri": "http://localhost:8080/oauth2/jwks"
+    
+  который сервер ресурсов будет использовать для проверки подписи токенов
+    
+  application.properties
+    keySetURI=http://localhost:8080/oauth2/jwks
+    
+  Конфигурация
+      
+    @Value("${keySetURI}")
+    private String keySetUri;
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        return  http
+                .oauth2ResourceServer(
+                c -> c.jwt(
+                        j -> j.jwkSetUri(keySetUri)
+                        )
+                )
+                .csrf(csrf -> csrf.disable())
+                .authorizeHttpRequests(c -> c.anyRequest().authenticated())
+                .build();
+    }
+    
+    Все!
+    
+  Проверяем, вызываем конечную точку передавая --header 'Authorization: Bearer eyJraW…'
+  
+  JWT с данными клиента (claim)
+    
+    для примера добавим поле priority
+    
+    реализуется через OAuth2TokenCustomizer на сервере авторизации
+    
+        @Bean
+        public OAuth2TokenCustomizer<JwtEncodingContext> jwtCustomizer() {
+            return context -> {
+                JwtClaimsSet.Builder claims = context.getClaims();
+                claims.claim("priority", "HIGH");
+            };
+        }
+  
+    сервер ресурсов
+        
+      нужно определить кастомный Authentication расширенный данными клиента
+      
+      public class CustomAuthentication extends JwtAuthenticationToken {
+          private final String priority;
+          
+          public CustomAuthentication(
+                  Jwt jwt,
+                  Collection<? extends GrantedAuthority> authorities,
+                  String priority) {
+              
+              super(jwt, authorities);
+              this.priority = priority;
+          }
+          
+          public String getPriority() {
+              return priority;
+          }
+      }
+      
+      далее реализуем конвертен JWT - CustomAuthentication
+        
+        @Component
+        public class JwtAuthenticationConverter implements Converter<Jwt, CustomAuthentication> {
+            
+            @Override
+            public CustomAuthentication convert(Jwt source) {
+                List<GrantedAuthority> authorities = List.of(() -> "read");
+                String priority = String.valueOf(source.getClaims().get("priority"));
+                return new CustomAuthentication(source, authorities, priority);
+            }
+            
+        }
+        
+      добавляем конвертер в конфиг
+        
+        private final JwtAuthenticationConverter converter;
+        
+        .oauth2ResourceServer(
+                c -> c.jwt(
+                        j -> j
+                                .jwkSetUri(keySetUri)
+                                .jwtAuthenticationConverter(converter)
+                        )
+                )
+      
+      Все! данные к security context
+        
+        SecurityContext securityContext = SecurityContextHolder.getContext();
+        CustomAuthentication authentication = (CustomAuthentication) securityContext.getAuthentication();
+  
+        log.info(authentication.getPriority())
+  
+  Проверка токена с помощью интроспекции
+  
+    на сервере авторизации регаем клиента и сервер ресурсов
+    
+        RegisteredClient registeredClient = RegisteredClient
+                    .withId(UUID.randomUUID().toString())
+                    .clientId("client")
+                    .clientSecret("secret")
+                    .clientAuthenticationMethod(
+                            ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                    .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                    .tokenSettings(TokenSettings.builder()
+                            .accessTokenFormat(OAuth2TokenFormat.REFERENCE)
+                            .accessTokenTimeToLive(Duration.ofHours(12))
+                            .build())
+                    .scope("CUSTOM")
+                    .build();
+
+        RegisteredClient resourceServer = RegisteredClient
+                .withId(UUID.randomUUID().toString())
+                .clientId("resource_server")
+                .clientSecret("resource_server_secret")
+                .clientAuthenticationMethod(
+                        ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                .authorizationGrantType(
+                        AuthorizationGrantType.CLIENT_CREDENTIALS)
+                .build();
+    
+    на сервере ресурсов
+        
+        
+        @Value("${introspectionUri}")
+        private String introspectionUri;
+
+        @Value("${resourceserver.clientID}")
+        private String resourceServerClientID;
+
+        @Value("${resourceserver.secret}")
+        private String resourceServerSecret;
+
+        @Bean
+        public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+            return  http
+                    .oauth2ResourceServer(
+                    c -> c.opaqueToken(
+                            o -> o.introspectionUri(introspectionUri)
+                                    .introspectionClientCredentials(resourceServerClientID, resourceServerSecret)
+                            )
+                    )
+                    .authorizeHttpRequests(c -> c.anyRequest().authenticated())
+                    .build();
+        }
+  
+  
+    получаем токен client:secret
+    
+        http://localhost:8080/oauth2/token
+          grant_type = client_credentials
+    
+    
+    Проверяем, вызываем конечную точку передавая полученный токен --header 'Authorization: Bearer eyJraW…'
+    
+
+Многопользовательские системы
+  
+  в случае если существует N серверов авторизации
+    тогда необходимо реализовать на стороне сервера ресурсов логику выбора
+  
+  authentication manager resolver
+    распознавателем диспетчера аутентификации - компонент дает возможность приложению в ходе работы решать, какой диспетчер аутентификации вызывать
+    
+  если все эти N серверов JWT то есть готовое решение JwtIssuerAuthenticationManagerResolver
+    
+      http.oauth2ResourceServer(j -> j.authenticationManagerResolver(authenticationManagerResolver()));
+      
+      @Bean
+      public AuthenticationManagerResolver<HttpServletRequest> authenticationManagerResolver() {
+          return JwtIssuerAuthenticationManagerResolver.fromTrustedIssuers(List.of("http://localhost:7070", "http://localhost:8080"));
+      }
+  
+  в случае если типы токенов разные, то придется колдавать...
+    см с.388

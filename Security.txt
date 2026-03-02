@@ -1135,3 +1135,142 @@ Cервер авторизации OAuth 2
   
   в случае если типы токенов разные, то придется колдавать...
     см с.388
+    
+    
+Клиент Oauth2
+
+  в Spring Security уже реализованы следующие провайдеры (CommonOAuth2Provider)
+  
+    Google;
+    GitHub;
+    Okta;
+    Facebook
+  
+    они настраиваются через свойства
+      
+    
+  
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception{
+        return http
+                .oauth2Login(Customizer.withDefaults())
+                .authorizeHttpRequests(c -> c.anyRequest().authenticated())
+                .build();
+    }
+    
+    на этом все! :)
+    
+  Собственный сервер авторизации
+    
+    на сервере авторизации регаем клиента
+    
+        RegisteredClient registeredClient = RegisteredClient
+                  .withId(UUID.randomUUID().toString())
+                  .clientId("client")
+                  .clientSecret("secret")
+                  .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                  .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                  .redirectUri("http://localhost:8080/login/oauth2/code/my_authorization_server")
+                  .scope(OidcScopes.OPENID)
+                  .build();
+    
+        и изменим порт 
+          server.port=7070
+    
+    клиент
+    
+      для настройки клиента нужно указать
+          
+        конечная точка авторизации, чтобы провайдер знал, куда перенаправить пользователя в процессе применения кода авторизации
+        конечная точка токена, которую приложение должно вызвать для получения токена доступа
+        конечная точка набора ключей, необходимая приложению для проверки токенов доступа
+        
+        в случае если сервер соответвует протоколу OpenID Connect (т.е. у него не кастомизированы эти URI)
+        то достаточно указать URI эмитента
+            http://127.0.0.1:7070
+    
+
+          spring.security.oauth2.client.provider.my_authorization_server.issueruri=http://127.0.0.1:7070
+
+          spring.security.oauth2.client.registration.my_authorization_server.client-id=client
+          spring.security.oauth2.client.registration.my_authorization_server.client-name=Custom
+          Spring.security.oauth2.client.registration.my_authorization_server.client-secret=secret
+          spring.security.oauth2.client.registration.my_authorization_server.provider=my_authorization_server
+          spring.security.oauth2.client.registration.my_authorization_server.client-authentication-method=client_secret_basic
+          spring.security.oauth2.client.registration.my_authorization_server.redirect-uri=http://localhost:8080/login/oauth2/code/my_authorization_server
+          spring.security.oauth2.client.registration.my_authorization_server.scope[0]=openid
+    
+    
+    
+    
+    
+    
+    
+    
+    http://127.0.0.1:7070/oauth2/authorize?response_type=code&client_id=client&scope=openid&redirect_uri=http://127.0.0.1:7070&code_challenge=1DM0IUEdn7tVh6Qt3WB4s7V_poqRB2rroiLV3oiyfU8&code_challenge_method=S256
+    
+    http://localhost:8080/oauth2/authorize?
+        // указывает серверу авторизации, что клиент хочет использовать грант в форме кода авторизации
+        response_type=code&
+        // идентификатор клиента
+        client_id=client&
+        // какую область доступа клиент хочет получить при этой попытке аутентификации
+        scope=openid&
+        // указывает URI, на который сервер авторизации будет перенаправлять пользователя после успешной аутентификации. 
+        // Этот URI должен быть одним из ранее настроенных для текущего клиента в RegisteredClient
+        redirect_uri=http://localhost:8080&
+        // Защита PKCE, верификатор
+        code_challenge=1DM0IUEdn7tVh6Qt3WB4s7V_poqRB2rroiLV3oiyfU8&
+        code_challenge_method=S256
+    
+    
+    авторизуемся и видим что ссылка превратилась (если превратилась в .well-known/.. то нужно вызвать повторно, 
+          это какая то фигня связанная с Chrome DevTools Project Settings) в 
+    
+        http://127.0.0.1:7070/?code=dwmTcus3SVh2m3gVUERos_rsW-FmEd8ScxtZIiQGZMr3hVtcBdZAT4d8gWDxpRBgLKw3mwTnZhHKFsuWG322H0kWMfWCICnStc6jKVoY0J2-AjTxsdPtH3zjNRzu-HI3
+
+    запрашиваем токен через POST, Auth Basic указываем client:secret
+    
+        В POSTMAN параметры указываются во вкладке body - form-data или x-www-form-urlencoded
+        в curl через опцию -d
+        
+      http://localhost:8080/oauth2/token
+        client_id = client
+        redirect_uri = http://localhost:8080
+        grant_type = authorization_code
+        code = dwmTcus3SVh2m3gVUERos_rsW-FmEd8ScxtZIiQGZMr3hVtcBdZAT4d8gWDxpRBgLKw3mwTnZhHKFsuWG322H0kWMfWCICnStc6jKVoY0J2-AjTxsdPtH3zjNRzu-HI3
+        code_verifier = g7VS--iEPbcZZV0e-_i2mPeVecjwVeCvx1tweXcCfxs
+      
+      
+   
+    
+    
+    
+spring.security.oauth2.client.provider.my_authorization_server.issueruri=http://127.0.0.1:7070
+
+spring.security.oauth2.client.registration.my_authorization_server.client-id=client
+spring.security.oauth2.client.registration.my_authorization_server.client-name=Custom
+Spring.security.oauth2.client.registration.my_authorization_server.client-secret=secret
+spring.security.oauth2.client.registration.my_authorization_server.provider=my_authorization_server
+spring.security.oauth2.client.registration.my_authorization_server.authorization-grant-type=authorization_code
+spring.security.oauth2.client.registration.my_authorization_server.client-authentication-method=client_secret_basic
+spring.security.oauth2.client.registration.my_authorization_server.redirect-uri=http://localhost:8080/login/oauth2/code/my_authorization_server
+spring.security.oauth2.client.registration.my_authorization_server.scope[0]=openid
+    
+    
+    http://localhost:7070/oauth2/authorize?response_type=code&client_id=client&scope=openid&redirect_uri=http://localhost:8080&code_challenge=1DM0IUEdn7tVh6Qt3WB4s7V_poqRB2rroiLV3oiyfU8&code_challenge_method=S256
+    
+    http://127.0.0.1:7070/oauth2/authorize?response_type=code&client_id=client&scope=openid&redirect_uri=http://localhost:7070&code_challenge=LbZZCAlH70-cSc89F79DQnzO1loc0oevz6nfdCzNa7Y&code_challenge_method=S256
+    
+    http://localhost:8080/.well-known/openid-configuration
+    
+    Конечная точка авторизации, на которую клиент перенаправит пользователя для аутентификации
+    "authorization_endpoint": "http://localhost:8080/oauth2/authorize"
+    Конечная точка токена, которую клиент вызовет для запроса токена доступа
+    "token_endpoint": "http://localhost:8080/oauth2/token"
+    Конечная точка набора ключей, через которую сервер ресурсов получит открытые ключи, необходимые для проверки токенов
+    "jwks_uri": "http://localhost:8080/oauth2/jwks"
+    Конечная точка интроспекции, которую сервер ресурсов может вызвать для проверки непрозрачных токенов
+    "introspection_endpoint":  "http://localhost:8080/oauth2/introspect"
+    
+    

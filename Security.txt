@@ -1,3 +1,9 @@
+ДЕБАГ
+
+logging.level.org.springframework.security=DEBUG
+logging.level.org.springframework.security.oauth2=TRACE
+
+
 Аутентификация - Проверка подлинности пользователя или процесса login-password
 Авторизация - Процесс наделения правами и определение, что пользователь может делать после успешной аутентификации.
 
@@ -704,6 +710,10 @@ Cервер авторизации OAuth 2
                 new OAuth2AuthorizationServerConfigurer();
 
         return  http
+                // ВАЖНО указать тут authorizeHttpRequests и formLogin т.к. данный фильтр отрабатывает до второго
+                // иначе страницы логина не будет и редирект будет на ошибку
+                .authorizeHttpRequests(c -> c.anyRequest().authenticated()) 
+                .formLogin(Customizer.withDefaults())
                 .securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
                 .with(authorizationServerConfigurer, (s) -> s.oidc(Customizer.withDefaults()))
                 .exceptionHandling((e) ->
@@ -1205,77 +1215,119 @@ Cервер авторизации OAuth 2
           spring.security.oauth2.client.registration.my_authorization_server.redirect-uri=http://localhost:8080/login/oauth2/code/my_authorization_server
           spring.security.oauth2.client.registration.my_authorization_server.scope[0]=openid
     
+      Все!
     
     
-    
-    
-    
-    
-    
-    http://127.0.0.1:7070/oauth2/authorize?response_type=code&client_id=client&scope=openid&redirect_uri=http://127.0.0.1:7070&code_challenge=1DM0IUEdn7tVh6Qt3WB4s7V_poqRB2rroiLV3oiyfU8&code_challenge_method=S256
-    
-    http://localhost:8080/oauth2/authorize?
-        // указывает серверу авторизации, что клиент хочет использовать грант в форме кода авторизации
-        response_type=code&
-        // идентификатор клиента
-        client_id=client&
-        // какую область доступа клиент хочет получить при этой попытке аутентификации
-        scope=openid&
-        // указывает URI, на который сервер авторизации будет перенаправлять пользователя после успешной аутентификации. 
-        // Этот URI должен быть одним из ранее настроенных для текущего клиента в RegisteredClient
-        redirect_uri=http://localhost:8080&
-        // Защита PKCE, верификатор
-        code_challenge=1DM0IUEdn7tVh6Qt3WB4s7V_poqRB2rroiLV3oiyfU8&
-        code_challenge_method=S256
-    
-    
-    авторизуемся и видим что ссылка превратилась (если превратилась в .well-known/.. то нужно вызвать повторно, 
-          это какая то фигня связанная с Chrome DevTools Project Settings) в 
-    
-        http://127.0.0.1:7070/?code=dwmTcus3SVh2m3gVUERos_rsW-FmEd8ScxtZIiQGZMr3hVtcBdZAT4d8gWDxpRBgLKw3mwTnZhHKFsuWG322H0kWMfWCICnStc6jKVoY0J2-AjTxsdPtH3zjNRzu-HI3
-
-    запрашиваем токен через POST, Auth Basic указываем client:secret
-    
-        В POSTMAN параметры указываются во вкладке body - form-data или x-www-form-urlencoded
-        в curl через опцию -d
+      настройка клиента через бины
+      
+        ClientRegistration – с помощью этого объекта задают параметры, необходимые клиенту для использования 
+                            сервера авторизации (учетные данные, URI перенаправления, URI авторизации и т. д.);
         
-      http://localhost:8080/oauth2/token
-        client_id = client
-        redirect_uri = http://localhost:8080
-        grant_type = authorization_code
-        code = dwmTcus3SVh2m3gVUERos_rsW-FmEd8ScxtZIiQGZMr3hVtcBdZAT4d8gWDxpRBgLKw3mwTnZhHKFsuWG322H0kWMfWCICnStc6jKVoY0J2-AjTxsdPtH3zjNRzu-HI3
-        code_verifier = g7VS--iEPbcZZV0e-_i2mPeVecjwVeCvx1tweXcCfxs
+        ClientRegistrationRepository – логика извлечения ClientRegistration
+        
+        
+        @Bean
+        public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+            return http
+                    .oauth2Login(Customizer.withDefaults())
+                    .authorizeHttpRequests(c -> c.anyRequest().authenticated())
+                    .build();
+        }
+        @Bean
+        public ClientRegistrationRepository clientRegistrationRepository() {
+            return new InMemoryClientRegistrationRepository(this.customClientRegistration());
+        }
+        private ClientRegistration customClientRegistration() {
+            return ClientRegistration.withRegistrationId("my_authorization_server")
+                    .clientId("client")
+                    .clientSecret("secret")
+                    .clientName("Custom")
+                    .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                    .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                    .redirectUri("http://localhost:8080/login/oauth2/code/my_authorization_server")
+                    .authorizationUri("http://127.0.0.1:7070/oauth2/authorize")
+                    .tokenUri("http://127.0.0.1:7070/oauth2/token")
+                    .userInfoUri("http://127.0.0.1:7070/userinfo")
+                    .jwkSetUri("http://127.0.0.1:7070/oauth2/jwks")
+                    .userNameAttributeName(IdTokenClaimNames.SUB)
+                    .scope("openid")
+                    .build();
+        }
+        
+  
+  метод аутентификации oauth2Login() добавляет данные об успешной аутентификации в контекст  
+  данные клиента можно получить через параметры 
+      OAuth2AuthenticationToken authentication
+      Authentication authentication
+  
+  или через SecurityContextHolder.getContext().getAuthentication()
+  
+      @GetMapping("/")
+      public Map<String, Object> home(OAuth2AuthenticationToken authentication) {
+          return authentication.getPrincipal().getAttributes();
+      }
       
-      
-   
+  
+  Реализация приложения как клиента Oauth2 
+  
+    реализация через получение токена с предоставлением учетных данных клиента
+  
+    для настройки приложения как клиента OAuth2 служит метод http.oauth2Client()
+  
+        @Bean
+        public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+            http.oauth2Client(Customizer.withDefaults());
+            http.authorizeHttpRequests(c -> c.anyRequest().permitAll());
+            return http.build();
+        }
     
+    настройка ClientRegistrationRepository
     
-    
-spring.security.oauth2.client.provider.my_authorization_server.issueruri=http://127.0.0.1:7070
+        @Bean
+        public ClientRegistrationRepository clientRegistrationRepository() {
+            ClientRegistration customClientRegistration = ClientRegistration
+                    .withRegistrationId("my_authorization_server")
+                    .clientId("client")
+                    .clientSecret("secret")
+                    .clientName("Custom")
+                    .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                    .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                    .tokenUri("http://127.0.0.1:7070/oauth2/token")
+                    .scope(OidcScopes.OPENID)
+                    .build();
 
-spring.security.oauth2.client.registration.my_authorization_server.client-id=client
-spring.security.oauth2.client.registration.my_authorization_server.client-name=Custom
-Spring.security.oauth2.client.registration.my_authorization_server.client-secret=secret
-spring.security.oauth2.client.registration.my_authorization_server.provider=my_authorization_server
-spring.security.oauth2.client.registration.my_authorization_server.authorization-grant-type=authorization_code
-spring.security.oauth2.client.registration.my_authorization_server.client-authentication-method=client_secret_basic
-spring.security.oauth2.client.registration.my_authorization_server.redirect-uri=http://localhost:8080/login/oauth2/code/my_authorization_server
-spring.security.oauth2.client.registration.my_authorization_server.scope[0]=openid
+            return new InMemoryClientRegistrationRepository(customClientRegistration);
+        }
     
+    токен запрашивается через менеджер клиентов OAuth2AuthorizedClientManager
     
-    http://localhost:7070/oauth2/authorize?response_type=code&client_id=client&scope=openid&redirect_uri=http://localhost:8080&code_challenge=1DM0IUEdn7tVh6Qt3WB4s7V_poqRB2rroiLV3oiyfU8&code_challenge_method=S256
+        @Bean
+        public OAuth2AuthorizedClientManager oAuth2AuthorizedClientManager(
+                ClientRegistrationRepository clientRegistrationRepository,
+                OAuth2AuthorizedClientRepository auth2AuthorizedClientRepository
+        ) {
+            OAuth2AuthorizedClientProvider provider = OAuth2AuthorizedClientProviderBuilder.builder()
+                    .clientCredentials()
+                    .build();
+            var cm = new DefaultOAuth2AuthorizedClientManager(
+                    clientRegistrationRepository,
+                    auth2AuthorizedClientRepository
+            );
+            cm.setAuthorizedClientProvider(provider);
+            return cm;
+        }
     
-    http://127.0.0.1:7070/oauth2/authorize?response_type=code&client_id=client&scope=openid&redirect_uri=http://localhost:7070&code_challenge=LbZZCAlH70-cSc89F79DQnzO1loc0oevz6nfdCzNa7Y&code_challenge_method=S256
+    Проверяем!
     
-    http://localhost:8080/.well-known/openid-configuration
-    
-    Конечная точка авторизации, на которую клиент перенаправит пользователя для аутентификации
-    "authorization_endpoint": "http://localhost:8080/oauth2/authorize"
-    Конечная точка токена, которую клиент вызовет для запроса токена доступа
-    "token_endpoint": "http://localhost:8080/oauth2/token"
-    Конечная точка набора ключей, через которую сервер ресурсов получит открытые ключи, необходимые для проверки токенов
-    "jwks_uri": "http://localhost:8080/oauth2/jwks"
-    Конечная точка интроспекции, которую сервер ресурсов может вызвать для проверки непрозрачных токенов
-    "introspection_endpoint":  "http://localhost:8080/oauth2/introspect"
-    
+        private final OAuth2AuthorizedClientManager clientManager;
+
+        @GetMapping("/token")
+        public String token() {
+            OAuth2AuthorizeRequest request = OAuth2AuthorizeRequest
+                    .withClientRegistrationId("my_authorization_server")
+                    .principal("client")
+                    .build();
+            var client = clientManager.authorize(request);
+            return client.getAccessToken().getTokenValue();
+        }
     

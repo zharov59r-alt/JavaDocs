@@ -265,7 +265,16 @@ BOM как зависимость
     <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-checkstyle-plugin</artifactId>
-        <version>3.6.0</version>
+        <version>3.3.1</version>
+        <configuration>
+            <configLocation>checkstyle.xml</configLocation>
+            <!-- завершить билд с ошибкой при обнаружении ошибки стиля -->
+            <failOnViolation>true</failOnViolation>
+            <!-- вывод ошибки в консоль -->
+            <logViolationsToConsole>true</logViolationsToConsole>
+            <!-- включить проверку директории с тестами -->
+            <includeTestSourceDirectory>true</includeTestSourceDirectory>
+        </configuration>
         <executions>
             <execution>
                 <goals>

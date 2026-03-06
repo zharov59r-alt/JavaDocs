@@ -1461,6 +1461,10 @@ static void vaTest ( int ... v) {
   по сути это комменты и всяческие макреры
   предназначены rлавным образом для использования друrими инструментами разработки или развертывания
   
+  Все аннотации состоят исключительно из объявлений методов
+  не может содержать конструкцию extends
+  все типы аннотаций автоматически расширяют интерфейс Annotation, который является суперинтерфейсом для всех аннотаций
+  
   Можно аннотировать
     Классы
     Поля
@@ -1479,14 +1483,16 @@ static void vaTest ( int ... v) {
     Исключения
     Аннотации
     
-  создается с помощью механизма, основанного на интерфейсе
     
+  Создание
     доступны примитивы, строки, классы, перечисления и массивы этих типов
     
     @interface MyAnno {
       String str() default "";
       int val() default 1;
-      Author[] authors() default {}; 
+      Class<?> type() default Object.class;
+      Class<?>[] args() default {};
+      boolean required default false;
     }
     
     также можно в качестве параметров передавать другие аннотации
@@ -1510,10 +1516,6 @@ static void vaTest ( int ... v) {
       
     
   
-  Все аннотации состоят исключительно из объявлений методов
-  не может содержать конструкцию extends
-  все типы аннотаций автоматически расширяют интерфейс Annotation, который является суперинтерфейсом для всех аннотаций
-  Любой тип объявления может иметь ассоциированную с ним аннотацию. Скажем, можно аннотировать классы, методы, поля, параметры и константы перечислений
   
   @MyAnno (str = "Пример аннотации ", val = 100)
   puЫic static void myMeth () (//...
@@ -1538,17 +1540,65 @@ static void vaTest ( int ... v) {
       int val() ; 
     }
     
-  Получение аннотаций во время выполнения с использованием рефлексии 
-    пакет java.lang.reflect
-  
-    1. получение объекта Class
-      final Class<?> getClass()
+  Механизм рефлексии
+    позволяет программе анализировать и модифицировать свою структуру и поведение, а также получать доступ к данным во время выполнения
     
-      с помощью методов Class можно просматривать информацию о различных элементах, объявленных в классе, в том числе об аннотациях
-        Method getMethod ( String rnethNarne , Class<?> ... pararnTypes) 
-        getField()
-        getConstructor()
+    Reflection API (java.lang.reflect)
+      Получение информации - получение самой разной информации о классах, интерфейсах, функциях, конструкторах, методах и модулях.
+      Анализ и выполнение кода - динамического управления программой, можно анализировать и выполнять код, 
+                                поступающий из программного окружения. Это открывает новые возможности для .
+      Создание экземпляров классов - средства для динамического создания новых экземпляров классов.
+      Вызов методов объектов по именам
+      
+      Получение информации
+        объекты для представления различных элементов программы
+        Class - с помощью методов Class можно просматривать информацию о различных элементах, объявленных в классе, в том числе об аннотациях
+          final Class<?> getClass()
+            final Class<?> c = myClass.getClass(); // через экземпляр класса
+            final Class<?> c = MyClass.class;
+            Method[] methods = c.getMethods();
+              
+          Method
+            getMethod ( String methodName , Class<?> ... paramTypes) 
+              Method m = c.getMethod("setParam1", int.class);
+              
+              Class<?> returnType = m.getReturnType(); // возвращаемый тип
+              Type genericReturnType = method.getGenericReturnType(); //обобщённый возвращаемый тип
+              Class<?>[] parameterTypes = method.getParameterTypes();
+              Type[] genericParameterTypes = method.getGenericParameterTypes();
+              Class<?>[] exceptionTypes = method.getExceptionTypes();
+              Type[] genericExceptionTypes = method.getGenericExceptionTypes();
+              
+          Field
+              Field[] fields = c.getDeclaredFields();
+          ... 
+          
+      interface AnnotatedElement
+        реализуется всеми
+        предоставляет ряд методов для работы с аннотациями            
+          getAnnotations() — возвращает все аннотации для указанного элемента.
+          getAnnotation(Class<T> annotationClass) — если аннотация есть в коде, возвращает её экземпляр
+          isAnnotationPresent(Class<? extends Annotation> annotationClass) — проверяет, отмечен ли указанной аннотацией элемент
+          
+          Class<MyClass> myClass = MyClass.class;
+          Annotation[] classAnnotations = myClass.getAnnotations();
+          
+          Constructor<?>[] constructors = myClass.getDeclaredConstructors();
+          Annotation[] constructorAnnotations = constructors[0].getAnnotations();
+          
+          Field[] fields = myClass.getDeclaredFields();
+          Annotation[] fieldAnnotations = fields[0].getAnnotations();
+          
+          Method[] methods = myClass.getDeclaredMethods();
+          Annotation[] methodAnnotations = methods[0].getAnnotations();
 
+        
+          Annotation [] getDeclaredAnnotations () // возвращает все неунаследованные аннотации, присутствующие в вызывающем объекте
+          getDeclaredAnnotation (), 
+          getAnnotationsByType ()
+          getDeclaredAnnotationsByType ()
+        
+    
 
     import java.lang.annotation.*;
     import java.lang.reflect.*;
@@ -1593,13 +1643,6 @@ static void vaTest ( int ... v) {
     }
 
 
-  методы
-    Annotation [] getDeclaredAnnotations () // возвращает все неунасл едованные аннотации, присутствующие в вызывающем объекте
-    default boolean isAnnotationPresent ( Class<? extends Annotation> annoType ) // возвращает true, если аннотация, указанная в аргументе annoType, ассоциирована с вызывающим объектом
-    getDeclaredAnnotation (), 
-    getAnnotationsByType ()
-    getDeclaredAnnotationsByType ()
-
   Встроенные аннотации
     java.lang.annotation
       @Retention // рассчитана только на применение к другой аннотации, определяет политику хранения
@@ -1607,11 +1650,30 @@ static void vaTest ( int ... v) {
                     предназначена для использования только в качестве аннотации к объявлению аннотации
       @Target // определяет типы элементов,  к которым может применяться аннотация, 
                 предназначена для использования только в качестве аннотации к объявлению аннотации
-      @Inherited // маркерной аннотацией, которую можно использовать только в объявлении другой аннотации для классов
-                аннотация для суперкласса наследуется подклассом
+                
+                ElementType
+                    ANNOTATION_TYPE — применяется к аннотациям;
+                    CONSTRUCTOR — применяется к конструкторам;
+                    FIELD — применяется к полям классов и перечислений;
+                    LOCAL_VARIABLE — применяется к локальным переменным;
+                    METHOD — применяется к методам;
+                    PACKAGE — применяется к пакетам;
+                    PARAMETER — применяется к параметрам метода;
+                    TYPE — применяется к типам (классам, интерфейсам, перечислениям).
+                
+                
+      @Inherited // применяется только к аннотациям, которыми помечают классы
+                указывает, что эта аннотация будет применена ко всей иерархии классов
                 при запросе у подкласса конкретной аннотации, если эта аннотация отсутствует в подклассе, то проверяется его суперкласс
                 Если же аннотация присутствует в суперклассе и снабжена аннотацией @Inherited, тогда она будет возвращена
-
+      @Repeatable // позволяет использовать одну и ту же аннотацию несколько раз для одного элемента кода
+                  // Для обеспечения обратной совместимости повторяющиеся аннотации хранятся в контейнере аннотаций, который автоматически генерируется компилятором Java.
+                  
+                   @Repeatable(Roles.class) // Roles.class - класс контейнер
+                   public @interface Role {
+                       String value();
+                   }
+                  
     java.lang
       @Override // маркерная аннотация для методов. Метод с аннотацией @Override должен переопределять метод
                   из суперкласса, иначе возникнет ошибка на этапе компиляции

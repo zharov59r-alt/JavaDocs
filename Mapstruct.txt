@@ -1,0 +1,80 @@
+pom.xml
+  <properties>
+      <org.mapstruct.version>1.5.5.Final</org.mapstruct.version>
+  </properties>
+
+  <dependency>
+      <groupId>org.mapstruct</groupId>
+      <artifactId>mapstruct</artifactId>
+      <version>${org.mapstruct.version}</version>
+      <scope>compile</scope>
+  </dependency>
+  
+  <build>
+      <plugins>
+          <plugin>
+              ...
+              <configuration>
+                  <annotationProcessorPaths>
+                  !!!! Обязательно сначало Lombok
+                      <path>
+                          <groupId>org.projectlombok</groupId>
+                          <artifactId>lombok</artifactId>
+                      </path>
+                      <path>
+                          <groupId>org.mapstruct</groupId>
+                          <artifactId>mapstruct-processor</artifactId>
+                          <version>${org.mapstruct.version}</version>
+                      </path>
+                  </annotationProcessorPaths>
+              </configuration>
+          </plugin>
+              ...
+      </plugins>
+  </build>
+  
+  
+  @Data
+  @AllArgsConstructor
+  public class UserAllResponse {
+
+      private String email;
+      private String lastName;
+      private String firstName;
+      private String middleName;
+  }
+  
+  @Mapper(componentModel = MappingConstants.ComponentModel.SPRING)
+  //MapStruct будет искать все классы, которые помечены данной аннотацией, 
+    и генерировать реализацию по заданным внутри этого интерфейса/абстрактного класса правилам, 
+    и указываем componentModel (он нужен в том случае, если мы используем Spring-framework в нашем проекте)
+  public interface UserMapper {
+      UserAllResponse toUserAllResponse(User user);
+      List<UserAllResponse> toUserResponseList(List<User> users);
+  }
+  
+  готово, юзаем
+  
+    private final UserMapper userMapper;
+    
+    @GetMapping
+    public ResponseEntity<List<UserResponse>> findAll() {
+        List<User> users = userRepository.findAll();
+        List<UserResponse> userResponseList = userMapper.toUserResponseList(users);
+        return ResponseEntity.ok(userResponseList);
+    }
+    
+  
+  сгенерится файл в generated-sources.annotations
+    обычный маппинг через геттеры и сеттеры
+    
+  если в мапперах мы ссылаемся на другие мапперы, то это нужно отмечать в аннотации
+  внедрение зависимостей стоит делать через конструктор, потому что какая то там ошибка может пасть
+    @Mapper(componentModel = "spring", uses = {LectureListMapper.class, LecturerListMapper.class}, injectionStrategy = InjectionStrategy.CONSTRUCTOR)
+  
+  
+  Для кастомизации полей аннотациz метода @Mapping
+    в ней там 100500 свойств
+    @Mapping(target = "password", source = "pass", defaultValue = "pass123")
+    User fromUserCreateDto(UserCreateDto userCreateDto);
+    

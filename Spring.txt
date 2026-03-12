@@ -1,24 +1,20 @@
-Классы описывающие объекты
-  config file - описание нужных нам экземпляров классов и их взаимосвязей
-    Spring container - создание и управление объектами
-
 Способы конфигурации
   xml
   анностации + xml
   java code
+  
+Внедрение зависимостей (Dependency Injection) - подход при котором экземпляры классов от которых зависит класс Х передаются ему через конструктор
+Инверсия управления (Inversion of control) - в контексте спринга это класс контейнер в котором создаются экземпляры всех классов зависимостей
 
-Spring Bean - объект который создается и управляется Spring Container
-ApplicationContext - представляет собой Spring Container
-                      для получения бина из Spring Container необходимо создать ApplicationContext
-
-Inversion of control - передава прав по созданию и управлению объектами Spring
-
-Dependency Injection - передача прав по внедрению зависимостей
-                      делает объекты слабо зависимыми друг от друга (убирает хардкод присвоений)
+DI
   реализуется через 
     конструктор   <constructor-arg ref = "myPet"/>
     сеттер        <property name="pet" ref="myPet"/>
     Autowiring
+
+Spring Bean - объект который создается и управляется Spring Container
+ApplicationContext - представляет собой Spring Container
+                      для получения бина из Spring Container необходимо создать ApplicationContext
 
 Bean scope (область видимости) определяет
   жизненный цикл бина
@@ -66,9 +62,7 @@ Bean scope (область видимости) определяет
 @Qualifier("BeanId") - при наличии нескольких бинов для DI данной аннотацией можно указать какой из них ниспользовать
                       при использовании с конструктором аннотируется параметр конструктора
 
-@Value - внедрение строк и прочих типов
-        через properties - <context:property-placeholder location="classpath:myApp.properties"/>        
-        @Value("${person.surname}")
+        
         
 @Scope - указание области видимости
 @PostContruct - уровень метода, обозначает init метод
@@ -87,7 +81,127 @@ Bean scope (область видимости) определяет
   @Bean - уровень метода, указывает что бин создается вручную с помощью метода, имя метода выступает BeanId
   
   Для работы @Value в конфиг класс необходимо добавить аннотацию @PropertySource("classpath:myApp.properties")
+  
+@Value - внедрение строк и прочих типов
+        через properties - <context:property-placeholder location="classpath:myApp.properties"/>        
+        @Value("${person.surname}")
+        
+        @Component
+        class MyClass {
+            // внедряем в поле класса значение свойства my.property 
+            // из конфигурационного файла
+            @Value("${my.property}")
+            private String myProperty;
 
+            // внедряем в конструктор значение переменной окружения MY_ENV_VARIABLE
+            @Autowired
+            public MyClass(@Value("${my-env-variable}") String myEnvironmentVariable) {
+            }
+            
+            // внедряем в сеттер значение системного свойства jvm.system.property
+            public void setJvmSystemProperty(@Value("${jvm.system.property}") String jvmSystemProperty) {
+            }
+        } 
+        
+        
+        дефолтное значение
+        @Value("${spring-quiz.title:\"Неназванный тест\"}")
+        
+Типобезопасная конфигурация
+  
+  по сути это маппинг свойств в поля класса, чтобы были определены типы
+  иерархия делается через вложенные классы
+  
+  spring-quiz:
+    title: "\"Тест по Spring Framework\""
+    report:
+      enabled: true
+  
+  @Setter @Getter @ToString
+  @ConfigurationProperties("spring-quiz") // str - префикс для свойств
+  public class AppConfig {
+      private String title;
+      private Report report;
+
+      @Setter @Getter @ToString
+      public static class Report {
+          private boolean enabled;
+      }
+  }
+
+  чтобы спринг обработал такие классы необходимо добавить аннотацию
+  @ConfigurationPropertiesScan в основной класс отмеченный @SpringBootApplication
+  
+  далее класс можно использовать как бин, внедрять его и юзать свойства через геттеры
+
+
+Профили настроек
+  создаются отдельные файлы application-{profile}.yaml
+    application-dev.yaml
+
+  далее через аргументы командной строки указываем нужный
+    --spring.profiles.active={profile}
+  
+  подключение доп файлов
+    spring:
+      main:
+      config:
+        import: "classpath:quiz/questions.yaml"
+  
+
+  списки
+    в properties
+    
+      colors[0]=красный
+      colors[1]=зелёный
+      colors[2]=синий
+      fruits: яблоки, бананы, абрикосы
+      
+    в YAML
+    
+      colors:
+        - красный
+        - зелёный
+        - синий
+      fruits: [яблоки, бананы, абрикосы]
+    
+    вложенные структуры
+    
+        fruits[0].name=яблоки
+        fruits[0].color=зелёный
+        fruits[1].name=бананы
+        fruits[1].color=жёлтый
+        fruits[2].name=абрикосы
+        fruits[2].color=желтовато-красный
+         
+        fruits:
+          - name: яблоки
+            color: зелёный
+          - name: бананы
+            color: жёлтый
+          - name: абрикосы
+            color: желтовато-красный
+  
+  настройка логирования
+    logging.level.полное_имя_логера=уровень_важности
+    
+    Пример
+      logging.level.ru.yandex.practicum.quiz.QuizApp=warn
+    
+      ru.yandex.practicum.quiz.QuizApp — имя логера. 
+        Обычно это имя класса, в котором логер был создан. В нашем случае эту информацию логирует класс SpringApplication. 
+        Он использует имя класса, который мы передали в его метод run, — то есть QuizApp.
+    
+    YAML
+      
+      logging.level:
+        ru.yandex.practicum.quiz.QuizApp: WARN # настраиваем уровень логера
+      
+    также можно указать просто название пакета
+    
+      logging.level:
+        ru.yandex.practicum.quiz
+    
 
 АОП 
   
@@ -448,63 +562,244 @@ MVC
   
 
 REST
-
+  
+  spring-boot-starter-web включает библиотеку Jackson
+    которая автоматически сериализует запрос ответ в JSON
+  
+  
   @RestController - класс, составная аннотация 
     @Controller
+    @ResponseBody - добавляется автоматически к каждому методу
+      используется для создания RESTful-веб-сервисов, автоматически преобразуя объекты Java в формат JSON или XML, возвращая данные непосредственно в тело HTTP-ответа
+      объект Optional автоматически проверит на наличие значения и, если оно присутствует, преобразует его
+  
+  Ответ
+  
+    @GetMapping(value = "/posts/{postId}")
     @ResponseBody
-    используется для создания RESTful-веб-сервисов, автоматически преобразуя объекты Java в формат JSON или XML, возвращая данные непосредственно в тело HTTP-ответа
+    public Optional<Post> findById(@PathVariable int postId) {
+        return posts.stream()
+            .filter(x -> x.getId() == postId)
+            .findFirst();
+    }
+    
+    ResponseEntity - позволяет настроить заголовки ответа и статус
+    
+    @GetMapping(value = "/posts/{postId}")
+    public ResponseEntity<Optional<Post>> findById(@PathVariable int postId) {
+        Optional<Post> result = postService.findById(postId);
+        // указываем нужные заголовки и их значения
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Content-Type", "application/json");
+        // возвращаем ResponseEntity с настроенными телом, заголовками и кодом ответа 
+        return new ResponseEntity<>(result, headers, HttpStatus.OK);
+    } 
+    
+        или через билдер без заголовков
+            
+            return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(post);
+            
+            return ResponseEntity.ok(HttpStatus.OK);
+            ....
+            
+    
+    также статус можно передать через аннотацию
+    
+        @ResponseStatus(HttpStatus.CREATED)
+        public Post create(@RequestBody Post post) {
+            return postService.create(post);
+        } 
+    
+    
+    
+  Параметры
+    POST запрос
+    
+      @RequestBody - указывает что тело HTTP запроса должно быть преобразовано к формату класса Employee
+    
+      @PostMapping
+      public Post create(@RequestBody Post post) {
+          return postService.create(post);
+      }
+      
+    Параметры пути
+      @DeleteMapping("/employees/{id}")
+      public String removeEmployee(@PathVariable("id") Long id) {
+    
+    Параметры строки .../posts/search?author=Bob 
+      @GetMapping("/search")
+        public List<Post> searchPosts(@RequestParam("author") String author) {
+                System.out.println("Ищем посты пользователя с именем " + author);
+              ... // опустим логику поиска
+        }
+        
+      
+      @RequestParam(required = false)
+      @RequestParam Optional<String> id
+      @RequestParam(defaultValue = "test") String id
+      @RequestParam Map<String,String> allParams
+      // Multi-Value Parameter
+        ...api/foos?id=1,2,3
+        @RequestParam List<String> id
+    
+    Заголовки
+      @RequestHeader("X-Custom-Header") String customHeader
+    
+    
+    
+    Дата
+    
+      т.к. приходит String, то чтобы преобразовать дату используем @DateTimeFormat
+          @RequestParam
+          @DateTimeFormat(pattern = "yyyy-MM-dd") 
+          LocalDate date
+      
+      Другие варианты
+          @Configuration
+          public class DateTimeConfig extends WebMvcConfigurationSupport {
 
+              @Bean
+              @Override
+              public FormattingConversionService mvcConversionService() {
+                  DefaultFormattingConversionService conversionService = new DefaultFormattingConversionService(false);
+
+                  DateTimeFormatterRegistrar dateTimeRegistrar = new DateTimeFormatterRegistrar();
+                  dateTimeRegistrar.setDateFormatter(DateTimeFormatter.ofPattern("dd.MM.yyyy"));
+                  dateTimeRegistrar.setDateTimeFormatter(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"));
+                  dateTimeRegistrar.registerFormatters(conversionService);
+
+                  DateFormatterRegistrar dateRegistrar = new DateFormatterRegistrar();
+                  dateRegistrar.setFormatter(new DateFormatter("dd.MM.yyyy"));
+                  dateRegistrar.registerFormatters(conversionService);
+
+                  return conversionService;
+              }
+          }
+      
+      Properties File
+          spring.mvc.format.date=yyyy-MM-dd
+          spring.mvc.format.date-time=yyyy-MM-dd HH:mm:ss
+          spring.mvc.format.time=HH:mm:ss
+      
+    Форматы ответов и запросов MediaType
+    
+      @PutMapping(
+              // ожидаем данные в виде обычного текста
+              consumes = MediaType.TEXT_PLAIN_VALUE,
+              // будем возвращать данные в виде потока байт
+              produces = MediaType.APPLICATION_OCTET_STREAM_VALUE
+      )
   
-  @Configuration
-    @EnableWebMvc - Включает Spring MVC: Импортирует DelegatingWebMvcConfiguration, которая настраивает все основные компоненты Spring MVC.
-                  аналог <mvc:annotation-driven/>
-    @EnableTransactionManagement аналог <tx:annotation-driven transaction-manager="transactionManager" />
-  
+  Передача бинарных данных
+    
+    MultipartFile -  предоставляет методы для работы с файлами и записи их на диск
+    
+    @ResponseStatus(HttpStatus.CREATED)
+    @PostMapping("/posts/{postId}/images")
+    public List<Image> addPostImages(@PathVariable("postId") long postId,
+                                     @RequestParam("image") List<MultipartFile> files) {
+        return imageService.saveImages(postId, files);
+    } 
+    
+    
+    @GetMapping(value = "/images/{imageId}", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+    public ResponseEntity<byte[]> downloadImage(@PathVariable long imageId) {
+        ImageData imageData = imageService.getImageData(imageId);
+        HttpHeaders headers = new HttpHeaders();
+        // Content-Disposition — это заголовок HTTP-ответа, указывающий браузеру, как обрабатывать полученный контент: 
+        // отобразить его внутри страницы (inline) или загрузить как файл (attachment)
+        headers.setContentDisposition(
+                ContentDisposition.attachment()
+                        .filename(imageData.getName())
+                        .build()
+        );
+
+        return new ResponseEntity<>(imageData.getData(), headers, HttpStatus.OK);
+    }
+    
+    
+Обработка ошибок
   
     @ExceptionHandler // метод для обработки исключений
-    //ResponseEntity обертка http response EmployeeIncorrectData - объект который будет добавлен в body
+    // отлавливаем исключение IllegalArgumentException
+    public Map<String, String> handleNegativeCount(final IllegalArgumentException e) {
+        // возвращаем сообщение об ошибке
+        return Map.of("error", "Передан отрицательный параметр count.");
+    } 
+    
+    Обработка нескольких исключений
+      @ExceptionHandler({IllegalArgumentException.class, NullPointerException.class})
+      // в аргументах указывается родительское исключение
+      public Map<String, String> handleIncorrectCount(final RuntimeException e) {
+    
+    
+    @ExceptionHandler
     public ResponseEntity<EmployeeIncorrectData> handleException(NoSuchEmployeeException exception) {
         EmployeeIncorrectData data = new EmployeeIncorrectData();
         data.setInfo(exception.getMessage());
         return new ResponseEntity<>(data, HttpStatus.NOT_FOUND);
     }
-  
     
-    @ControllerAdvice - класс, глобальная обработка исключений
-                        перехватывает exception контроллеров
-                        АОП функционал
-  
+    А еще можно статус вернуть через @ResponseStatus(HttpStatus.BAD_REQUEST)
+      @ExceptionHandler
+      @ResponseStatus(HttpStatus.BAD_REQUEST)
+      public ErrorResponse handleHappinessOverflow(final HappinessOverflowException e) {
+         return new ErrorResponse(
+                 "Слишком большое значение [happiness]",
+                 "Осторожно, вы так избалуете пёсика! Уровень happinness: " + e.getHappinessLevel()
+         );
+      }
     
-    @PostMapping("/employees")
-    public Employee addEmployee(@RequestBody Employee employee) {
-  
-    @RequestBody - указывает что тело HTTP запроса должно быть преобразовано к формату класса Employee
-  
-  
-    @DeleteMapping("/employees/{id}")
-    public String removeEmployee(@PathVariable("id") Long id) {
-  
-  
-Security
+    
+  @ControllerAdvice - класс, глобальная обработка исключений
+                      перехватывает exception контроллеров
+                      содержит пачку методов @ExceptionHandler
+                      АОП функционал
 
-  Аутентификация - Проверка подлинности пользователя или процесса login-password
-  Авторизация - Процесс наделения правами и определение, что пользователь может делать после успешной аутентификации.
-  
-  
-  @EnableWebSecurity — это аннотация в Spring Security, которая активирует поддержку веб-безопасности, 
-                      регистрирует цепочку фильтров Spring Security и отключает автоконфигурацию по умолчанию, 
-                      позволяя вам настроить аутентификацию и авторизацию для HTTP-запросов вашего приложения, 
-                      например, правила доступа к URL-адресам или страницы входа
+      @ControllerAdvice
+      public class ErrorHandler {
 
-Security
+          @ExceptionHandler
+          public ResponseEntity<Map<String, Integer>> handleHappinessOverflow(final HappinessOverflowException e) {
+              return new ResponseEntity<>(
+                      Map.of("happinessLevel", e.getHappinessLevel()),
+                      HttpStatus.BAD_REQUEST
+              );
+          }
+      } 
+      
+      @RestControllerAdvice // включает аннотацию @ResponseBody => не нужно юзать ResponseEntity
+      public class ErrorHandler {
 
-
-    
-    
-    
-    
+          @ExceptionHandler
+          @ResponseStatus(HttpStatus.BAD_REQUEST)
+          public Map<String, Integer> handleHappinessOverflow(final HappinessOverflowException e) {
+              return Map.of("happinessLevel", e.getHappinessLevel());
+          }
+      } 
+      
+    можно указать перечень классов для которых будет выполнятся обработка ошибок
+      @ControllerAdvice(assignableTypes = CatsInteractionController.class) 
+      @ControllerAdvice(assignableTypes = {DogsInteractionController.class, CatsInteractionController.class}) 
+      
+    можно указать пакет
+      @ControllerAdvice("ru.yandex.practicum.controller")
+      @ControllerAdvice(value = "ru.yandex.practicum.controller")
+      @ControllerAdvice(basePackages = "ru.yandex.practicum.controller") 
   
   
+  
+  
+  
+  
+  
+  
+  @Configuration
+    @EnableWebMvc - Включает Spring MVC: Импортирует DelegatingWebMvcConfiguration, которая настраивает все основные компоненты Spring MVC.
+                  аналог <mvc:annotation-driven/>
+    @EnableTransactionManagement аналог <tx:annotation-driven transaction-manager="transactionManager" />
   
   
   

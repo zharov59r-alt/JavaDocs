@@ -1,0 +1,109 @@
+Подключаем
+
+  <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-liquibase</artifactId>
+  </dependency>
+  
+Создаем
+  /src/main/resources/db/changelog/db.changelog-master.yaml
+  
+  Важно id должен быть уникальным
+  
+  databaseChangeLog:
+  - logicalFilePath: db/changelog/db.changelog-lesson1.yaml
+  - changeSet:
+      id: 1
+      author: zharov
+      changes:
+        - createTable:
+            schemaName: admin
+            tableName: user
+            columns:
+              - column:
+                  name: user_id
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_email
+                  type: text
+                  constraints:
+                    unique: true
+                    nullable: false
+              - column:
+                  name: user_first_name
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_last_name
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_middle_name
+                  type: text
+              - column:
+                  name: creation_date
+                  type: timestamp
+                  constraints:
+                    nullable: false
+        - sql:
+            dbms: postgresql
+            sql: |
+              ALTER TABLE admin.user
+              ADD COLUMN search_text_vector tsvector 
+              GENERATED ALWAYS AS (
+                  to_tsvector(
+                      'english',
+                      regexp_replace(
+                          (user_email || ' ' || user_first_name || ' ' || user_last_name || ' ' || COALESCE(user_middle_name, ''::text)),
+                          '[^[:alnum:]_[:space:]]+'::text,
+                          ' '::text,
+                          'g'::text
+                      )
+                  )
+              ) STORED;
+        - createSequence:
+            schemaName: admin
+            sequenceName: s_user_id
+            
+При первом запуске будет создано 2 таблицы в public
+databasechangelog
+databasechangeloglock
+
+по ним он будет отслеживать накаты
+
+
+далее можно добавить новую миграцию
+
+migration1.yaml
+
+  databaseChangeLog:
+    - changeSet:
+        id: 2
+        author: zharov
+        changes:
+          - createSequence:
+              schemaName: admin
+              sequenceName: s_role_id
+              
+и добавляем ее в db.changelog-master.yaml
+
+  - include:
+      file: migration1.yaml
+      relativeToChangelogFile: true
+      
+Чтобы запускать миграции на работающей БД необходимо создать файл resources/liquibase.properties
+  минимальное содержание
+    changeLogFile=src/main/resources/db/changelog/db.changelog-master.yaml
+    url=jdbc:postgresql://10.241.29.52:5432/java
+    username=postgres
+    password=KxfOwrJY3V
+    driver=org.postgresql.Driver
+    
+  далее можно закинуть миграцию на сервер, обновить db.changelog-master.yaml 
+  и выполнить команду 
+    mvn liquibase:update

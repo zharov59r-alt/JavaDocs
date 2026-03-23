@@ -124,7 +124,8 @@ Dockerfile
 создание образа 
   переходим в директорию с Dockerfile и выполняем команду
     docker build -t mynginx .
-  
+      . — точка в конце команды, путь до Dockerfile, на основе которого производится сборка
+    
 Информация о слоях сборки
   docker image history <IMAGE ID>
   

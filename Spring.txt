@@ -1262,3 +1262,28 @@ HTTP client
   getAsJsonArray — конвертирует JsonElement в экземпляр класса JsonArray.
   getAsString, getAsLong, getAsBoolean — извлекают из JsonElement, хранящего примитивное значение, значение соответствующего типа данных в Java.
 
+
+
+
+Сборка выполняемых файлов JAR
+  mvn package
+
+  Получившийся файл JAR будет помещен в каталог target
+    <artifactId>-<version>.jar
+  
+  запуск
+    java -jar tacocloud-0.0.19-SNAPSHOT.jar
+
+  
+  Пример Dockerfile
+  
+    FROM eclipse-temurin:21-alpine
+    COPY app.jar app.jar
+    ENTRYPOINT ["java","-jar","/app.jar"]
+
+  билдим
+    docker image build -t filmorate .
+    
+  запускаем
+    docker run -d -p 8080:8080 filmorate:latest
+  

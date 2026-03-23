@@ -1,0 +1,160 @@
+Запуск локально в compose
+
+  compose.yaml
+
+    version: '3'
+      services:
+        zookeeper:
+          image: wurstmeister/zookeeper
+          container_name: zookeeper
+          ports:
+            - "2181:2181"
+          networks:
+            - kafka-net
+        kafka:
+          image: wurstmeister/kafka
+          container_name: kafka
+          ports:
+            - "9092:9092"
+          environment:
+            KAFKA_ADVERTISED_LISTENERS: INSIDE://kafka:9092,OUTSIDE://localhost:9093
+            KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT
+            KAFKA_LISTENERS: INSIDE://0.0.0.0:9092,OUTSIDE://0.0.0.0:9093
+            KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
+            KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+            KAFKA_CREATE_TOPICS: "baeldung:1:1"
+          networks:
+            - kafka-net
+      networks:
+        kafka-net:
+          driver: bridge
+  
+  запуск
+    docker-compose up -d 
+    
+  Создание топика
+    docker-compose exec kafka kafka-topics.sh --create --topic quickstart-events --bootstrap-server localhost:9092
+  
+  Подключение на прослушивание очереди
+    docker-compose exec kafka kafka-console-consumer.sh --topic quickstart-events --bootstrap-server localhost:9092
+      --from-beginning - выведет очередь с самого начала
+      
+  Подключение к очереди для отправки
+    docker-compose exec kafka kafka-console-producer.sh --topic quickstart-events --bootstrap-server localhost:9092
+    
+  
+Зависимость
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-kafka</artifactId>
+    </dependency>
+
+Настройка
+
+  Spring Boot производит автонастройку, поэтому аннотацию @EnableKafka можно не указывать
+  
+  минимальная настройка
+    application.properties
+  
+      spring.kafka.bootstrap-servers=localhost:9092
+  
+  По какой то причине при обращении к Kafka подставляется хост kafka даже если прописать IP
+  поэтому идем в C:\Windows\System32\drivers\etc\hosts и прописываем 
+    127.0.0.1 kafka
+  
+  
+Пример пушера
+  
+  @RequiredArgsConstructor
+  @Service
+  public class KafkaMessagingService {
+
+      private final KafkaTemplate<String, String> kafkaTemplate;
+
+      public void send(String msg) {
+          kafkaTemplate.send("quickstart-events", msg);
+      }
+
+  }
+  
+  Если хочется полезть в потроха, то 
+  
+        @Configuration
+        public class KafkaProducer {
+
+            @Bean
+            public ProducerFactory<String, String> producerFactory() {
+                Map<String, Object> configProps = new HashMap<>();
+                configProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+                configProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+                configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+                return new DefaultKafkaProducerFactory<>(configProps);
+            }
+
+            @Bean
+            public KafkaTemplate<String, String> kafkaTemplate() {
+                return new KafkaTemplate<>(producerFactory());
+            }
+        }
+  
+Пример лиснера
+  
+  он требует группу, возможно это требование как то настраивается отдельно
+    можно указать ее через props
+      spring.kafka.consumer.group-id=quickstart-consumer-group
+    либо напрямую в аннотации
+      @KafkaListener(topics = "quickstart-events", groupId = "quickstart-consumer-group")
+    
+  
+  @Slf4j
+  @Component
+  public class Listener {
+
+      @KafkaListener(topics = "quickstart-events")
+      public void listen(String message) {
+          log.info(message);
+      }
+
+  }
+  
+  
+  потроха 
+  
+      @Configuration
+      public class KafkaConsumer {
+
+          @Bean
+          public ConsumerFactory<String, String> consumerFactory() {
+              Map<String, Object> props = new HashMap<>();
+              props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+              props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+              props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+              props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+              return new DefaultKafkaConsumerFactory<>(props);
+          }
+
+          @Bean
+          ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory() {
+              ConcurrentKafkaListenerContainerFactory<String, String> factory = new ConcurrentKafkaListenerContainerFactory<>();
+              factory.setConsumerFactory(consumerFactory());
+              return factory;
+          }
+
+      }
+      
+      
+  Фильтрация сообщений
+      
+          @Bean
+          ConcurrentKafkaListenerContainerFactory<String, String> filterKafkaListenerContainerFactory(ConsumerFactory<String, String> consumerFactory) {
+              ConcurrentKafkaListenerContainerFactory<String, String> factory = new ConcurrentKafkaListenerContainerFactory<>();
+              factory.setConsumerFactory(consumerFactory);
+              factory.setRecordFilterStrategy(record -> record.value().contains("qwe"));
+              return factory;
+          }
+          
+      будут отфильтровываться все сообщения содержащие "qwe"
+          
+          @KafkaListener(topics = "quickstart-events", containerFactory = "filterKafkaListenerContainerFactory")
+          
+    

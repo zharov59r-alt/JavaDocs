@@ -4,18 +4,39 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-liquibase</artifactId>
   </dependency>
+
+Создаем 
+  /src/main/resources/liquibase.properties
   
+      changeLogFile=src/main/resources/db/changelog/db.changelog-master.yaml
+      url=jdbc:postgresql://localhost:5432/admin
+      username=user
+      password=password
+      driver=org.postgresql.Driver
+
+
+
+
 Создаем
   /src/main/resources/db/changelog/db.changelog-master.yaml
   
-  Важно id должен быть уникальным
+    databaseChangeLog:
+    - include:
+        file: migration1.yaml
+        relativeToChangelogFile: true
   
-  databaseChangeLog:
-  - logicalFilePath: db/changelog/db.changelog-lesson1.yaml
+  /src/main/resources/db/changelog/migration1.yaml
+    
+  Важно id должен быть уникальным
+      
+      databaseChangeLog:
   - changeSet:
       id: 1
       author: zharov
       changes:
+        - sql:
+              dbms: postgresql
+              sql: CREATE SCHEMA IF NOT EXISTS admin;
         - createTable:
             schemaName: admin
             tableName: user
@@ -31,6 +52,11 @@
                   type: text
                   constraints:
                     unique: true
+                    nullable: false
+              - column:
+                  name: user_password
+                  type: text
+                  constraints:
                     nullable: false
               - column:
                   name: user_first_name
@@ -69,6 +95,65 @@
         - createSequence:
             schemaName: admin
             sequenceName: s_user_id
+      
+  /src/main/resources/db/changelog/migration2.yaml
+      
+      databaseChangeLog:
+      - changeSet:
+          id: 2
+          author: zharov
+          changes:
+            - createSequence:
+                schemaName: admin
+                sequenceName: s_role_id
+            - createSequence:
+                schemaName: admin
+                sequenceName: s_user_role_Link_id
+            - createTable:
+                schemaName: admin
+                tableName: role
+                columns:
+                  - column:
+                      name: role_id
+                      type: BIGINT
+                      constraints:
+                        primaryKey: true
+                        nullable: false
+                  - column:
+                      name: role_name
+                      type: text
+                      constraints:
+                        unique: true
+                        nullable: false
+                  - column:
+                      name: role_description
+                      type: text
+                      constraints:
+                        nullable: false
+            - createTable:
+                schemaName: admin
+                tableName: user_role_Link
+                columns:
+                  - column:
+                      name: user_role_Link_id
+                      type: BIGINT
+                      constraints:
+                        primaryKey: true
+                        nullable: false
+                  - column:
+                      name: user_id
+                      type: BIGINT
+                      constraints:
+                        nullable: false
+                        foreignKeyName: fk_user_role_Link_user_id
+                        references: admin.user (user_id)
+                  - column:
+                      name: role_id
+                      type: BIGINT
+                      constraints:
+                        nullable: false
+                        foreignKeyName: fk_user_role_Link_role_id
+                        references: admin.role (role_id)
             
 При первом запуске будет создано 2 таблицы в public
 databasechangelog
@@ -77,33 +162,7 @@ databasechangeloglock
 по ним он будет отслеживать накаты
 
 
-далее можно добавить новую миграцию
-
-migration1.yaml
-
-  databaseChangeLog:
-    - changeSet:
-        id: 2
-        author: zharov
-        changes:
-          - createSequence:
-              schemaName: admin
-              sequenceName: s_role_id
-              
-и добавляем ее в db.changelog-master.yaml
-
-  - include:
-      file: migration1.yaml
-      relativeToChangelogFile: true
       
-Чтобы запускать миграции на работающей БД необходимо создать файл resources/liquibase.properties
-  минимальное содержание
-    changeLogFile=src/main/resources/db/changelog/db.changelog-master.yaml
-    url=jdbc:postgresql://10.241.29.52:5432/java
-    username=postgres
-    password=KxfOwrJY3V
-    driver=org.postgresql.Driver
-    
-  далее можно закинуть миграцию на сервер, обновить db.changelog-master.yaml 
-  и выполнить команду 
-    mvn liquibase:update
+Чтобы запускать миграции на работающей БД можно закинуть миграцию на сервер, 
+обновить db.changelog-master.yaml и выполнить команду 
+  mvn liquibase:update

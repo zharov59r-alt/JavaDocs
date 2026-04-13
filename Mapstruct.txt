@@ -12,23 +12,23 @@ pom.xml
   
   <build>
       <plugins>
-          <plugin>
-              ...
-              <configuration>
-                  <annotationProcessorPaths>
-                  !!!! Обязательно сначало Lombok
-                      <path>
-                          <groupId>org.projectlombok</groupId>
-                          <artifactId>lombok</artifactId>
-                      </path>
-                      <path>
-                          <groupId>org.mapstruct</groupId>
-                          <artifactId>mapstruct-processor</artifactId>
-                          <version>${org.mapstruct.version}</version>
-                      </path>
-                  </annotationProcessorPaths>
-              </configuration>
-          </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </path>
+                        <path>
+                            <groupId>org.mapstruct</groupId>
+                            <artifactId>mapstruct-processor</artifactId>
+                            <version>${org.mapstruct.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
               ...
       </plugins>
   </build>
@@ -52,6 +52,8 @@ pom.xml
       UserAllResponse toUserAllResponse(User user);
       List<UserAllResponse> toUserResponseList(List<User> users);
   }
+  
+  он ориентируется по названиям полей и типам (наверное)
   
   готово, юзаем
   
@@ -78,3 +80,26 @@ pom.xml
     @Mapping(target = "password", source = "pass", defaultValue = "pass123")
     User fromUserCreateDto(UserCreateDto userCreateDto);
     
+    
+  Пример с двумя классами в один
+      
+      @Data
+      @AllArgsConstructor
+      public class RoleResponse {
+          private Long id;
+          private String roleName;
+          private String roleDescription;
+      }
+      
+      @Data
+      @AllArgsConstructor
+      public class UserResponse {
+          private Long id;
+          private String userEmail;
+          private List<RoleResponse> roles;
+      }
+      
+      @Mapper(componentModel = MappingConstants.ComponentModel.SPRING)
+      public interface UserMapper {
+          UserResponse toUserResponse(User user, List<RoleResponse> roles);
+      }

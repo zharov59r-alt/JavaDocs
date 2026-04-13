@@ -1,0 +1,117 @@
+Получатель
+https://spring.io/guides/gs/consuming-web-service
+
+запуск сервера SOAP командой
+mvn spring-boot:run
+
+<dependency>
+	<groupId>org.springframework.boot</groupId>
+	<artifactId>spring-boot-starter-webservices</artifactId>
+	<exclusions>
+		<exclusion>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-webmvc</artifactId>
+		</exclusion>
+	</exclusions>
+</dependency>
+
+исключаем webmvc т.к. серверная часть нам не нужна
+
+Генерация классов из wsdl
+
+<plugin>
+	<groupId>com.sun.xml.ws</groupId>
+	<artifactId>jaxws-maven-plugin</artifactId>
+	<version>4.0.3</version>
+	<executions>
+		<execution>
+			<goals>
+				<goal>wsimport</goal>
+			</goals>
+		</execution>
+	</executions>
+	<configuration>
+		<wsdlDirectory>${basedir}/src/main/wsdl</wsdlDirectory>
+		<packageName>com.example.consumingwebservice.wsdl</packageName>
+	</configuration>
+</plugin>
+
+сгенерировать классы можно запустив
+mvn jaxws:wsimport
+
+также они автоматически будут сгенерированы при компиляции compile 
+
+
+клиент
+
+
+		package com.example.consumer;
+
+    import org.slf4j.Logger;
+    import org.slf4j.LoggerFactory;
+
+    import org.springframework.ws.client.core.support.WebServiceGatewaySupport;
+    import org.springframework.ws.soap.client.core.SoapActionCallback;
+
+    import com.example.consumer.wsdl.GetCountryRequest;
+    import com.example.consumer.wsdl.GetCountryResponse;
+
+    public class CountryClient extends WebServiceGatewaySupport {
+
+        private static final Logger log = LoggerFactory.getLogger(CountryClient.class);
+
+        public GetCountryResponse getCountry(String country) {
+
+            GetCountryRequest request = new GetCountryRequest();
+            request.setName(country);
+
+            log.info("Requesting location for " + country);
+
+            GetCountryResponse response = (GetCountryResponse) getWebServiceTemplate()
+                    .marshalSendAndReceive("http://localhost:8080/services/countries", request,
+                            new SoapActionCallback(
+                                    "https://spring.io/guides/gs-producing-web-service/GetCountryRequest"));
+
+            return response;
+        }
+    }
+    
+    
+    !!!! вопрос зачем нужна new SoapActionCallback
+    
+    
+Конфигурация
+  
+    package com.example.consumer;
+
+    import org.springframework.boot.webservices.client.WebServiceTemplateBuilder;
+    import org.springframework.context.annotation.Bean;
+    import org.springframework.context.annotation.Configuration;
+    import org.springframework.oxm.jaxb.Jaxb2Marshaller;
+
+    @Configuration
+    public class CountryConfiguration {
+
+        @Bean
+        public Jaxb2Marshaller marshaller() {
+            Jaxb2Marshaller marshaller = new Jaxb2Marshaller();
+            // this package must match the package configured in the build.gradle/pom.xml
+            marshaller.setContextPath("com.example.consumer.wsdl");
+            return marshaller;
+        }
+
+        @Bean
+        public CountryClient countryClient(WebServiceTemplateBuilder builder, Jaxb2Marshaller marshaller) {
+            builder = builder.setMarshaller(marshaller).setUnmarshaller(marshaller);
+
+            CountryClient client = new CountryClient();
+            client.setWebServiceTemplate(builder.build());
+            client.setDefaultUri("http://localhost:8080/services");
+            return client;
+        }
+
+    }
+    
+    Jaxb2Marshaller - компонент для сериализации и десериализации XML
+    
+    marshaller указывает на коллекцию сгенерированных доменных объектов и будет использовать их как для сериализации, так и для десериализации между XML и POJO.
